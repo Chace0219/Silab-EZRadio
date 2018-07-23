@@ -1,0 +1,425 @@
+C51 COMPILER V9.56.0.0   MAIN                                                              07/20/2018 15:28:21 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\c51.exe main.c DB OE BR SMALL OPTIMIZE(11,SIZE) DEFINE(SILABS_PLATFORM_WMB912) D
+                    -EFINE(SILABS_WMCU_SI106x)
+
+line level    source
+
+   1          
+   2          #include "..\bsp.h"
+   3          
+   4          #define PACKET_SEND_INTERVAL  250u
+   5          
+   6          
+   7          
+   8          // Power Management Bit Definitions
+   9          #define SLEEP        0x80              // Sleep Mode Select
+  10          #define SUSPEND      0x40              // Suspend Mode Select
+  11          #define CLEAR        0x20              // Wake-Up Flag Clear
+  12          #define RSTWK        0x10              // Reset Pin Falling Edge Wake-Up
+  13          #define RTCFWK       0x08              // SmaRTClock Failure Wake-Up
+  14          #define RTCAWK       0x04              // SmaRTClock Alarm Wake-Up
+  15          #define PMATWK       0x02              // Port Match Wake-Up
+  16          #define CPT0WK       0x01              // Comparator0 Wake-Up
+  17          
+  18          // Friendly names for the LPM function arguments
+  19          #define PORT_MATCH   PMATWK
+  20          #define RTC          RTCFWK + RTCAWK
+  21          #define COMPARATOR   CPT0WK
+  22          
+  23          // FLSCL Bit Definition
+  24          #define BYPASS    0x40
+  25          #define NON_ZERO  0x01
+  26          
+  27          
+  28          
+  29          //-----------------------------------------------------------------------------
+  30          // Global Variables
+  31          //-----------------------------------------------------------------------------
+  32          
+  33          // Variables used for the RTC interface
+  34          U8 PMU0CF_Local;                       // Holds the desired Wake-up sources
+  35           
+  36          // Define Wake-Up Flags
+  37          U8 RTC_Alarm;
+  38          U8 RTC_Failure;
+  39          U8 Comparator_Wakeup;
+  40          U8 Port_Match_Wakeup;
+  41          
+  42          void LPM_Init (void)
+  43          {
+  44   1        PMU0CF = CLEAR;
+  45   1        PMU0CF_Local = 0;
+  46   1        RTC_Alarm = 0;
+  47   1        RTC_Failure = 0;
+  48   1        Comparator_Wakeup = 0;
+  49   1        Port_Match_Wakeup = 0;
+  50   1        P2MDOUT |= 0x01;
+  51   1      }
+  52          
+  53          void LPM_Enable_Wakeup (U8 wakeup)
+  54          {
+C51 COMPILER V9.56.0.0   MAIN                                                              07/20/2018 15:28:21 PAGE 2   
+
+  55   1        PMU0CF_Local |= (wakeup & (RTC | PORT_MATCH | COMPARATOR));
+  56   1      }
+  57          
+  58          void LPM_Disable_Wakeup (U8 wakeup)
+  59          {
+  60   1        PMU0CF_Local &= ~(wakeup & (RTC | PORT_MATCH | COMPARATOR));
+  61   1      }
+  62          
+  63          
+  64          void LPM(U8 mode)
+  65          {
+  66   1         U8 b;
+  67   1         U8 CLKSEL_save;
+  68   1         U8 EA_save;
+  69   1         U8 PMU0CF_snapshot;
+  70   1         U8 RTC0CN_snapshot;
+  71   1         
+  72   1         // Save current interrupt state and disable interrupts 
+  73   1         EA_save = EA;
+  74   1         EA = 0;
+  75   1         
+  76   1         // Save current system clock selection and select the low power oscillator
+  77   1         // divided by 2 as the system clock
+  78   1         CLKSEL_save = CLKSEL;
+  79   1         CLKSEL = 0x14;
+  80   1         
+  81   1         // Enable the Flash read one-shot timer   
+  82   1         FLSCL &= ~BYPASS;                   // Clear the one-shot bypass bit
+  83   1         FLWR  =   NON_ZERO;                 // Write a "dummy" value to FLWR
+  84   1         
+  85   1         // Verify that the system clock setting has been applied
+  86   1         while(!(CLKSEL & 0x80));            // Wait until CLKRDY -> 1
+  87   1         
+  88   1      
+  89   1         //----------------------------------
+  90   1         // ~~~ Device in Low Power Mode ~~~
+  91   1         //
+  92   1             PMU0CF = (mode | PMU0CF_Local);
+  93   1         //
+  94   1         // ~~~   Device is now Awake    ~~~
+  95   1         //----------------------------------
+  96   1      
+  97   1         // Restore the System Clock
+  98   1         CLKSEL = CLKSEL_save;
+  99   1      
+ 100   1         
+ 101   1         // Disable (Bypass) the Flash Read one-shot timer if the system clock
+ 102   1         // frequency is higher than 10 MHz
+ 103   1         // if(SYSCLK > 10000000)
+ 104   1         {
+ 105   2            FLSCL |= BYPASS;                 // Set the one-shot bypass bit                     
+ 106   2         }
+ 107   1        
+ 108   1         // Capture the wake-up source and clear all wake-up source flags   
+ 109   1         PMU0CF_snapshot = PMU0CF;
+ 110   1         PMU0CF = CLEAR;
+ 111   1      
+ 112   1         // Check for a Port Match Wakeup
+ 113   1         if(PMU0CF_snapshot & PMATWK)
+ 114   1         {
+ 115   2            Port_Match_Wakeup = 1;  
+ 116   2         }
+C51 COMPILER V9.56.0.0   MAIN                                                              07/20/2018 15:28:21 PAGE 3   
+
+ 117   1         // Restore Interrupt State
+ 118   1         EA = EA_save;
+ 119   1         
+ 120   1         // Check for a reset pin Wakeup
+ 121   1         if(PMU0CF_snapshot & RSTWK)
+ 122   1         {
+ 123   2            // Delay 15uS per datasheet recommendation
+ 124   2            for(b = 255; b > 0; b--);
+ 125   2         }
+ 126   1         // */
+ 127   1      }               
+*** WARNING C280 IN LINE 70 OF main.c: 'RTC0CN_snapshot': unreferenced local variable
+ 128          
+ 129          
+ 130          /*------------------------------------------------------------------------*/
+ 131          /*                          Local variables                               */
+ 132          /*------------------------------------------------------------------------*/
+ 133          SEGMENT_VARIABLE(lPer_SecCntr, U32, SEG_DATA);  /**< Demo sec time holder */
+ 134          SEGMENT_VARIABLE(transmittCount, U16, SEG_DATA);  /**< Demo sec time holder */
+ 135          SEGMENT_VARIABLE(lPktSending, U8, SEG_DATA);
+ 136          SEGMENT_VARIABLE(sendingData, U8, SEG_DATA);
+ 137          
+ 138          /*------------------------------------------------------------------------*/
+ 139          /*                      Local function prototypes                         */
+ 140          /*------------------------------------------------------------------------*/
+ 141          void vPlf_McuInit        (void);
+ 142          void vInitializeHW       (void);
+ 143          void DemoApp_Pollhandler (void);
+ 144          
+ 145          void OSCILLATOR_Init (void)
+ 146          {
+ 147   1         RSTSRC = 0x06;                      // Enable missing clock detector and
+ 148   1                                             // leave VDD Monitor enabled.
+ 149   1         CLKSEL = 0x04;                      // Select low power internal osc.
+ 150   1                                             // divided by 1 as the system clock
+ 151   1         FLSCL |= 0x40;                      // Set the BYPASS bit for operation > 10MHz
+ 152   1      }
+ 153          
+ 154          void wakeupPORT_Init (void)
+ 155          {
+ 156   1         P0MDIN |= 0x04;                     // P0.2 are digital
+ 157   1         P0MDOUT &= ~0x04;                   // P0.2 are open-drain
+ 158   1         P0     |= 0x04;                     // Set P0.2, P0.3 latches to '1'
+ 159   1      
+ 160   1         P1MDIN |= 0x70;                     // P1.4, P1.5, P1.6 are digital
+ 161   1         P1MDOUT |= 0x70;                    // P1.4, P1.5, P1.6 are push-pull
+ 162   1      
+ 163   1      
+ 164   1         LED1 = 1;
+ 165   1         LED2 = 1;
+ 166   1         LED3 = 1;
+ 167   1      
+ 168   1         // Setup the Port Match Wake-up Source to wake up on the falling
+ 169   1         // edge of P0.2 (when the switch is pressed)
+ 170   1         P0MASK = 0x04;                      // Mask out all pins except for P0.2
+ 171   1         P0MAT = 0x04;                       // P0.2 should be HIGH while the device
+ 172   1                                             // is in the low power mode
+ 173   1      
+ 174   1         XBR2    = 0x40;                     // Enable crossbar and enable
+ 175   1                                             // weak pull-ups
+ 176   1      }
+ 177          
+C51 COMPILER V9.56.0.0   MAIN                                                              07/20/2018 15:28:21 PAGE 4   
+
+ 178          void main(void)
+ 179          {
+ 180   1      /*
+ 181   1        // initiazlie for only sleep and wakeup interrupt
+ 182   1        OSCILLATOR_Init();                 // Initialize Oscillator
+ 183   1        wakeupPORT_Init();
+ 184   1        LPM_Init();                         // Initialize Power Management
+ 185   1        LPM_Enable_Wakeup(PORT_MATCH);      // Enable Port Match wake-up source
+ 186   1        EA = 1;                             // Enable global interrupts
+ 187   1        // enable sleep 
+ 188   1        LPM(SLEEP);*/
+ 189   1        vInitializeHW();
+ 190   1       
+ 191   1        lPktSending = 0u;
+ 192   1        sendingData = 1u;
+ 193   1        while (TRUE)
+ 194   1        {
+ 195   2          if(Port_Match_Wakeup)
+ 196   2          {
+ 197   3            Port_Match_Wakeup = 0;        // Reset Port Match Flag to indicate 
+ 198   3                                          // that we have detected an event
+ 199   3            // Initialize the Hardware and Radio
+ 200   3            vInitializeHW();
+ 201   3            sendingData = 1u;
+ 202   3                  LED1 = 0;
+ 203   3          }
+ 204   2          // The following Handlers requires care on invoking time interval
+ 205   2          if (wIsr_Timer2Tick)
+ 206   2          {
+ 207   3            if (lPer_SecCntr < 0xFFFFFFF)
+ 208   3              lPer_SecCntr++;
+ 209   3            wIsr_Timer2Tick = FALSE;
+ 210   3            // vHmi_PbHandler();
+ 211   3            // vHmi_LedHandler();
+ 212   3      
+ 213   3          }
+ 214   2          if(sendingData)
+ 215   2          {
+ 216   3            // Check if the radio packet sent successfully
+ 217   3            if (TRUE == gRadio_CheckTransmitted())
+ 218   3            {
+ 219   4              lPktSending = 0u;
+ 220   4            }
+ 221   3            if ((lPer_SecCntr >= PACKET_SEND_INTERVAL) && (0u == lPktSending))
+ 222   3            {
+ 223   4              if(transmittCount < 5u)
+ 224   4              {
+ 225   5                vSampleCode_SendFixPacket();
+ 226   5                lPer_SecCntr = 0u;
+ 227   5                lPktSending = 1u;
+ 228   5                transmittCount++;
+ 229   5              }
+ 230   4              else
+ 231   4              {
+ 232   5                lPer_SecCntr = 0u;
+ 233   5                transmittCount = 0u;
+ 234   5                sendingData = 0u;
+ 235   5      
+ 236   5                OSCILLATOR_Init();                 // Initialize Oscillator
+ 237   5                wakeupPORT_Init();
+ 238   5                LPM_Init();                         // Initialize Power Management
+ 239   5                LPM_Enable_Wakeup(PORT_MATCH);      // Enable Port Match wake-up source
+C51 COMPILER V9.56.0.0   MAIN                                                              07/20/2018 15:28:21 PAGE 5   
+
+ 240   5                EA = 1;                             // Enable global interrupts
+ 241   5      
+ 242   5                LED1 = 1;
+ 243   5                LED2 = 1;
+ 244   5                LED3 = 1;
+ 245   5      
+ 246   5                // enable sleep 
+ 247   5                LPM(SLEEP);
+ 248   5              }
+ 249   4            }
+ 250   3          } // */
+ 251   2      
+ 252   2      
+ 253   2        }
+ 254   1      }
+ 255          
+ 256          /**
+ 257           *  Demo Application Poll-Handler
+ 258           *
+ 259           *  @note This function must be called periodically.
+ 260           *
+ 261           */
+ 262          void DemoApp_Pollhandler()
+ 263          {
+ 264   1      
+ 265   1        
+ 266   1      }
+ 267          
+ 268          /**
+ 269           *  Calls the init functions for the used peripherals/modules
+ 270           *
+ 271           *  @note Should be called at the beginning of the main().
+ 272           *
+ 273           */
+ 274          void vInitializeHW()
+ 275          {
+ 276   1        // Initialize the MCU peripherals
+ 277   1        vPlf_McuInit();
+ 278   1      
+ 279   1        // Initialize IO ports
+ 280   1        vCio_InitIO();
+ 281   1      
+ 282   1        // Start Timer2 peripheral with overflow interrupt
+ 283   1        vTmr_StartTmr2(eTmr_SysClkDiv12_c, wwTmr_Tmr2Periode.U16, TRUE, bTmr_TxXCLK_00_c);
+ 284   1      
+ 285   1        // Start the push button handler
+ 286   1        vHmi_InitPbHandler();
+ 287   1      
+ 288   1        // Start the Led handler
+ 289   1        vHmi_InitLedHandler();
+ 290   1      
+ 291   1        // Initialize the Radio
+ 292   1        vRadio_Init();
+ 293   1      
+ 294   1        // Enable configured interrupts
+ 295   1        mIsr_EnableAllIt();
+ 296   1      }
+ 297          
+ 298          //
+ 299          void vPlf_McuInit(void)
+ 300          {
+ 301   1        U16 wDelay = 0xFFFF;
+C51 COMPILER V9.56.0.0   MAIN                                                              07/20/2018 15:28:21 PAGE 6   
+
+ 302   1      
+ 303   1        /* disable F930 watchdog */
+ 304   1        PCA0MD &= (~M_WDTE);
+ 305   1      
+ 306   1        /* Init Internal Precision Oscillator (24.5MHz) */
+ 307   1        SFRPAGE = LEGACY_PAGE;
+ 308   1        FLSCL   = M_BYPASS;
+ 309   1      
+ 310   1        OSCICN |= M_IOSCEN; // p7: Internal Prec. Osc. enabled
+ 311   1        CLKSEL  = 0x00;     // Int. Prec. Osc. selected (24.5MHz)
+ 312   1      
+ 313   1        /* P0: 4,7 push-pull */
+ 314   1        /* P1: 0,2,3,4,5,6 push-pull */
+ 315   1        P0MDOUT   = 0x90;
+ 316   1        P1MDOUT   = 0x7D;
+ 317   1      
+ 318   1        /* P0: 0,1,2,3,4,7 skipped */
+ 319   1        /* P1: 3,4,5,6 skipped */
+ 320   1        P0SKIP    = 0x9F;
+ 321   1        P1SKIP    = 0x78;
+ 322   1      
+ 323   1        /* Set SMBUS clock speed */
+ 324   1        Set115200bps_24MHZ5;
+ 325   1        /* Start Timer1 */
+ 326   1        TR1 = 1;
+ 327   1        /* Initialize SMBus */
+ 328   1        vSmbus_InitSMBusInterface();
+ 329   1      
+ 330   1        P0MDIN  = 0xFF; // All pin configured as digital port
+ 331   1        P1MDIN  = 0xFF; // All pin configured as digital port
+ 332   1      
+ 333   1        /* Set Drive Strenght */
+ 334   1        SFRPAGE = CONFIG_PAGE;
+ 335   1        P0DRV   = 0x00;
+ 336   1        P1DRV   = 0x00;
+ 337   1      
+ 338   1        SFRPAGE = LEGACY_PAGE;
+ 339   1        /* Crossbar configuration */
+ 340   1        XBR0    = M_URT0E | M_SMB0E; //p0: UART enabled on XBAR
+ 341   1        XBR1    = M_SPI1E ; //p6: SPI1 enabled on XBAR
+ 342   1      
+ 343   1        XBR2    = M_XBARE; //p6: XBAR enable
+ 344   1      
+ 345   1        /* latch all inputs to '1' */
+ 346   1        P0      = ~P0MDOUT;
+ 347   1        P1      = ~P1MDOUT;
+ 348   1      
+ 349   1        /* set all output to its default state */
+ 350   1        LED1      = EXTINGUISH;
+ 351   1        RF_NSEL   = TRUE;
+ 352   1        RF_PWRDN  = FALSE;
+ 353   1      
+ 354   1        SPI1CFG   = 0x40;
+ 355   1        SPI1CN    = 0x01;
+ 356   1        SPI1CKR   = 0x0B;
+ 357   1        /* De-select radio SPI */
+ 358   1        vSpi_SetNsel(eSpi_Nsel_RF);
+ 359   1      #if ((defined SILABS_LCD_DOG_GLCD) || (defined SILABS_MCU_DC_EMIF_F930) || (defined SILABS_PLATFORM_WMB))
+ 360   1        /* De-select LCD SPI */
+ 361   1        vSpi_SetNsel(eSpi_Nsel_LCD);
+ 362   1      
+ 363   1        LCD_A0    = FALSE;
+C51 COMPILER V9.56.0.0   MAIN                                                              07/20/2018 15:28:21 PAGE 7   
+
+ 364   1      #endif
+ 365   1      
+ 366   1        /* Startup delay */
+ 367   1        for (; wDelay; wDelay--)  ;
+ 368   1      
+ 369   1      }
+ 370          
+ 371          #ifdef SDCC
+              /**
+               * \brief External startup function of SDCC.
+               *
+               * It performs operations
+               * prior static and global variable initialization.
+               * Watchdog timer should be disabled this way, otherwise it
+               * can expire before variable initialization is carried out,
+               * and may prevent program execution jumping into main().
+               *
+               * \param None
+               * \return None
+               */
+              void _sdcc_external_startup(void)
+              {
+                PCA0MD &= ~0x40;      // Disable Watchdog timer
+              }
+              #endif
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    478    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     13       3
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

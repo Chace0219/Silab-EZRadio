@@ -1,0 +1,144 @@
+C51 COMPILER V9.56.0.0   SAMPLE_CODE_FUNC                                                  07/20/2018 15:28:23 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE SAMPLE_CODE_FUNC
+OBJECT MODULE PLACED IN sample_code_func.OBJ
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\c51.exe sample_code_func.c DB OE BR SMALL OPTIMIZE(11,SIZE) DEFINE(SILABS_PLATFO
+                    -RM_WMB912) DEFINE(SILABS_WMCU_SI106x)
+
+line level    source
+
+   1          /*! @file sample_code_func.c
+   2           * @brief This file contains functions to manage behavior of basic human module interfaces (push-buttons, 
+             -switches, LEDs).
+   3           *
+   4           * @b COPYRIGHT
+   5           * @n Silicon Laboratories Confidential
+   6           * @n Copyright 2012 Silicon Laboratories, Inc.
+   7           * @n http://www.silabs.com
+   8           */
+   9          
+  10          #include "..\bsp.h"
+  11          
+  12          
+  13          /*------------------------------------------------------------------------*/
+  14          /*                          Global variables                              */
+  15          /*------------------------------------------------------------------------*/
+  16          
+  17          /*------------------------------------------------------------------------*/
+  18          /*                          Function implementations                      */
+  19          /*------------------------------------------------------------------------*/
+  20          #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+                #if ((defined SILABS_PLATFORM_COMPONENT_PB) && (defined SILABS_PLATFORM_COMPONENT_LED) && (defined SILAB
+             -S_PLATFORM_COMPONENT_BUZZER))
+                  /*!
+                   * This function is used to show the actual state of the push-buttons on the Buzzer.
+                   *
+                   * @return  None.
+                   */
+                  void vSampleCode_ShowPbOnBuzzer(void)
+                  {
+                    SEGMENT_VARIABLE(boPbPushTrack, U8 , SEG_DATA);
+                    SEGMENT_VARIABLE(woPbPushTime, U16 , SEG_DATA);
+                    SEGMENT_VARIABLE(bPbLedCnt, U8 , SEG_DATA);
+              
+                    gHmi_PbIsPushed(&boPbPushTrack, &woPbPushTime);
+              
+                    for (bPbLedCnt = 1; bPbLedCnt <= 4; bPbLedCnt++)
+                    {
+                      if (boPbPushTrack)
+                      {
+                        vHmi_ChangeBuzzState(eHmi_BuzzOnce_c);
+                      }
+                      else
+                      {
+                        vHmi_ChangeBuzzState(eHmi_BuzzOff_c);
+                      }
+                    }
+                  }
+                #endif
+              #endif
+  49          
+  50          #if ((defined SILABS_PLATFORM_COMPONENT_PB) && (defined SILABS_PLATFORM_COMPONENT_LED))
+  51          /*!
+  52           * This function is used to show the actual state of the push-buttons on the LEDs.
+C51 COMPILER V9.56.0.0   SAMPLE_CODE_FUNC                                                  07/20/2018 15:28:23 PAGE 2   
+
+  53           *
+  54           * @return  TRUE - Started a packet TX / FALSE - Not packet to be sent.
+  55           */
+  56          BIT vSampleCode_SendFixPacket(void)
+  57          {
+  58   1        SEGMENT_VARIABLE(boPbPushTrack, U8, SEG_DATA);
+  59   1        SEGMENT_VARIABLE(woPbPushTime, U16, SEG_DATA);
+  60   1      
+  61   1        gHmi_PbIsPushed(&boPbPushTrack, &woPbPushTime);
+  62   1      
+  63   1        fixRadioPacket[0]='B';
+  64   1        fixRadioPacket[1]='U';
+  65   1        fixRadioPacket[2]='T';
+  66   1        fixRadioPacket[3]='T';
+  67   1        fixRadioPacket[4]='O';
+  68   1        fixRadioPacket[5]='N';
+  69   1      
+  70   1        if(boPbPushTrack & eHmi_Pb1_c)
+  71   1        {
+  72   2          fixRadioPacket[6]='1';
+  73   2        }
+  74   1        else if(boPbPushTrack & eHmi_Pb2_c)
+  75   1        {
+  76   2          fixRadioPacket[6]='2';
+  77   2        }
+  78   1        else if(boPbPushTrack & eHmi_Pb3_c)
+  79   1        {
+  80   2          fixRadioPacket[6]='3';
+  81   2        }
+  82   1        else if(boPbPushTrack & eHmi_Pb4_c)
+  83   1        {
+  84   2          fixRadioPacket[6]='4';
+  85   2        }
+  86   1        else
+  87   1        {
+  88   2          fixRadioPacket[6]='5';
+  89   2        }
+  90   1      
+  91   1        vRadio_StartTx(pRadioConfiguration->Radio_ChannelNumber, (U8 *) fixRadioPacket);
+  92   1      
+  93   1        /* Packet sending initialized */
+  94   1        return TRUE;
+  95   1      }
+  96          /*!
+  97           * This function is used to compare the content of the received packet to a string.
+  98           *
+  99           * @return  None.
+ 100           */
+ 101          BIT gSampleCode_StringCompare(U8* pbiPacketContent, U8* pbiString, U8 lenght)
+ 102          {
+ 103   1        while(*pbiPacketContent++ == *pbiString++)
+ 104   1        {
+ 105   2          if( (--lenght) == 0 )
+ 106   2          {
+ 107   3            return TRUE;
+ 108   3          }
+ 109   2        }
+ 110   1        return FALSE;
+ 111   1      }
+ 112          #endif
+ 113          
+ 114          
+C51 COMPILER V9.56.0.0   SAMPLE_CODE_FUNC                                                  07/20/2018 15:28:23 PAGE 3   
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    158    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      10
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

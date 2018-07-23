@@ -1,0 +1,325 @@
+C51 COMPILER V9.56.0.0   SMBUS                                                             07/20/2018 15:28:25 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE SMBUS
+OBJECT MODULE PLACED IN smbus.OBJ
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\c51.exe smbus.c DB OE BR SMALL OPTIMIZE(11,SIZE) DEFINE(SILABS_PLATFORM_WMB912) 
+                    -DEFINE(SILABS_WMCU_SI106x)
+
+line level    source
+
+   1          /**
+   2           *  Copyright 2008 Silicon Laboratories, Inc.
+   3           *  http://www.silabs.com
+   4           *
+   5           *  @file smbus.c
+   6           *  
+   7           *  C File Description:
+   8           *  @brief SMBus interface functions
+   9           *
+  10           *  Project Name: sRange 
+  11           * 
+  12           * 
+  13           *  @author Sz. Papp
+  14           *  @author V. Huszár
+  15           *
+  16           *  @date 2013.05.27.
+  17           *
+  18           *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+  19           *  BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  20           *  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+  21           *  DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  22           *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  23           *
+  24           *  This software must be used in accordance with the End User License Agreement.
+  25           */
+  26          
+  27          #include "..\bsp.h"
+  28          
+  29          /** Local functions */
+  30          void vSmbus_SMBusStart(void);
+  31          void vSmbus_SMBusStop(void);
+  32          
+  33          /**
+  34           *  Initialize and enable the SMBus interface.
+  35           *
+  36           *  @note Uses T0 timer to generate the appropriate clock source.
+  37           *        It gives approx. 400 kHz SMBus speed
+  38           ******************************************************************************/
+  39          void vSmbus_InitSMBusInterface()
+  40          {
+  41   1        /* Set SMBUS clock speed */
+  42   1        SetSMBUSClk400kHz_24MHZ5;
+  43   1        TR0   = 1;                /* START Timer0 */
+  44   1        /* SMBus Slave Inhibit, Clock from T0 overflow */
+  45   1        SMB0CF = 0x40;
+  46   1      
+  47   1        /* set auto ACK bit */
+  48   1        SMB0ADM |= 0x01;
+  49   1      
+  50   1        /* Enable SMBUS0 in CrossBar */
+  51   1      #ifdef SMBUS_TOGGLE_XBAR_ENABLED
+                XBR0 |= 0x04;
+              #endif
+  54   1        
+C51 COMPILER V9.56.0.0   SMBUS                                                             07/20/2018 15:28:25 PAGE 2   
+
+  55   1        /* Disable SMBus interrupt */
+  56   1        EIE1 &= 0xFE;
+  57   1      
+  58   1        /* Clear flags */
+  59   1        STA = FALSE;
+  60   1        STO = FALSE;
+  61   1        ACK = FALSE;
+  62   1        SI = FALSE;
+  63   1      
+  64   1        /* Enable SMBus peripheral */
+  65   1        SMB0CF |= 0x80;
+  66   1      }
+  67          
+  68          /**
+  69           *  Disable the SMBus interface.
+  70           *
+  71           *  @note This function doesn't stop/reset T1 timer.
+  72           ******************************************************************************/
+  73          void vSmbus_DisableSMBusInterface()
+  74          {
+  75   1        /* Disable SMBus */
+  76   1        STA = FALSE;
+  77   1        STO = FALSE;
+  78   1        ACK = FALSE;
+  79   1        SMB0CF &= 0x7F;
+  80   1      
+  81   1        /* Clear IT flag */
+  82   1        SI = FALSE;
+  83   1      
+  84   1        TR0   = 0;
+  85   1      
+  86   1        /* Disconnect SMBUS0 from CrossBar */
+  87   1      #ifdef SMBUS_TOGGLE_XBAR_ENABLED
+                XBR0 &= ~(0x04);
+              #endif
+  90   1      }
+  91          
+  92          /**
+  93           *  Generate start condition on SMBus.
+  94           *
+  95           *  @note
+  96           ******************************************************************************/
+  97          void vSmbus_SMBusStart()
+  98          {
+  99   1        /* Set START bit */
+ 100   1        STA = TRUE;
+ 101   1      
+ 102   1        /* wait for the start condition */
+ 103   1        while (SI == FALSE);
+ 104   1      
+ 105   1        /* clear interrupt flag */
+ 106   1        SI = FALSE;
+ 107   1      }
+ 108          
+ 109          /**
+ 110           *  Generate stop condition on SMBus.
+ 111           *
+ 112           *  @note
+ 113           ******************************************************************************/
+ 114          void vSmbus_SMBusStop()
+ 115          {
+ 116   1        /* Stop SMBus transaction */
+C51 COMPILER V9.56.0.0   SMBUS                                                             07/20/2018 15:28:25 PAGE 3   
+
+ 117   1        STO = TRUE;
+ 118   1        SI = FALSE;
+ 119   1        while (STO == TRUE);
+ 120   1      }
+ 121          
+ 122          /**
+ 123           *  Wait for the SMBus interrupt with timeout.
+ 124           *
+ 125           *  @return  \b FALSE - Timeout occurred without IT. <br>
+ 126           *           \b TRUE - IT occurred within Timeout.
+ 127           *
+ 128           *  @note
+ 129           *
+ 130           ******************************************************************************/
+ 131          BIT gSmbus_SMBusWaitForItWithTimeout()
+ 132          {
+ 133   1        SEGMENT_VARIABLE(busTimeOut, U16, SEG_DATA);
+ 134   1      
+ 135   1        /* reset timeout */
+ 136   1        busTimeOut = 0u;
+ 137   1      
+ 138   1        /* wait for the IT */
+ 139   1        while ((busTimeOut++ < 0xFFFE) && (SI == FALSE))  ;
+ 140   1      
+ 141   1        if (SI == TRUE) {
+ 142   2          return TRUE;
+ 143   2        }
+ 144   1      
+ 145   1        /* timeout occured, disable SMBus */
+ 146   1        vSmbus_DisableSMBusInterface();
+ 147   1      
+ 148   1        return FALSE;
+ 149   1      }
+ 150          
+ 151          /**
+ 152           *  Read from the SMBus.
+ 153           *
+ 154           *  @param[in]  Address 7bit slave address (7 MSB bit is used)
+ 155           *  @param[in]  Length Number of bytes to be read.
+ 156           *  @param[out] pData Array of data bytes read from the slave.
+ 157           *  @return     Result of the transaction, refer to CommIF.h.
+ 158           *  @note       The function blocks the code until completion.
+ 159           ******************************************************************************/
+ 160          eSMBusReturnStates qSmbus_SMBusRead(U8 biAddress, U8 biLength, U8 * pboData)
+ 161          {
+ 162   1        /* enable SMBus */
+ 163   1        vSmbus_InitSMBusInterface();
+ 164   1      
+ 165   1        /* START condition */
+ 166   1        STO = FALSE;
+ 167   1        ACK = FALSE;
+ 168   1        STA = TRUE;
+ 169   1      
+ 170   1        /* wait for START to be completed */
+ 171   1        if (!gSmbus_SMBusWaitForItWithTimeout()) {
+ 172   2          return SMBUS_TIMEOUT_ERROR;
+ 173   2        }
+ 174   1      
+ 175   1        /* send address byte */
+ 176   1        SMB0DAT = (U8) (biAddress << 1u) | 0x01;
+ 177   1      
+ 178   1        /* clear IT flag */
+C51 COMPILER V9.56.0.0   SMBUS                                                             07/20/2018 15:28:25 PAGE 4   
+
+ 179   1        SI = FALSE;
+ 180   1        /* delete start bit */
+ 181   1        STA = FALSE;
+ 182   1      
+ 183   1        /* wait address byte to be sent */
+ 184   1        if (!gSmbus_SMBusWaitForItWithTimeout()) {
+ 185   2          return SMBUS_TIMEOUT_ERROR;
+ 186   2        }
+ 187   1      
+ 188   1        if (FALSE == ACK) {
+ 189   2          /* Slave address is not acknowledged */
+ 190   2          vSmbus_DisableSMBusInterface();
+ 191   2      
+ 192   2          return SMBUS_WRONG_SLAVE_ADDRESS;
+ 193   2        }
+ 194   1      
+ 195   1        /* read data bytes */
+ 196   1        while (biLength--) {
+ 197   2          if (biLength > 0u) {
+ 198   3            /* More bytes to read */
+ 199   3            ACK = TRUE;
+ 200   3          } else {
+ 201   3            /* Last byte */
+ 202   3            ACK = FALSE;
+ 203   3          }
+ 204   2      
+ 205   2          /* clear IT flag */
+ 206   2          SI = FALSE;
+ 207   2          /* wait for receiving the next byte */
+ 208   2          if (!gSmbus_SMBusWaitForItWithTimeout()) {
+ 209   3            /* timeout occured */
+ 210   3            return SMBUS_TIMEOUT_ERROR;
+ 211   3          }
+ 212   2      
+ 213   2          *pboData++ = SMB0DAT;
+ 214   2        }
+ 215   1      
+ 216   1        /* all data byte read */
+ 217   1        vSmbus_SMBusStop();
+ 218   1        vSmbus_DisableSMBusInterface();
+ 219   1      
+ 220   1        return SMBUS_RX_FINISHED;
+ 221   1      }
+ 222          
+ 223          /**
+ 224           *  Send a given number of bytes on SMBus to the given address.
+ 225           *
+ 226           *  @param[in] Address 7bit slave address (7 MSB bit is used).
+ 227           *  @param[in] Length Number of bytes to be sent.
+ 228           *  @param[in] pData Pointer to data bytes to be sent.
+ 229           *  @return    Result of the transaction, refer to CommIF.h
+ 230           *  @note      The function blocks the flow until completion.
+ 231           ******************************************************************************/
+ 232          eSMBusReturnStates qSmbus_SMBusWrite(U8 biAddress, U8 biLength, U8 * pbiData)
+ 233          {
+ 234   1        /* enable SMBus */
+ 235   1        vSmbus_InitSMBusInterface();
+ 236   1      
+ 237   1        /* START condition */
+ 238   1        STO = FALSE;
+ 239   1        ACK = FALSE;
+ 240   1        STA = TRUE;
+C51 COMPILER V9.56.0.0   SMBUS                                                             07/20/2018 15:28:25 PAGE 5   
+
+ 241   1      
+ 242   1        /* wait for START to be completed */
+ 243   1        if (!gSmbus_SMBusWaitForItWithTimeout()) {
+ 244   2          return SMBUS_TIMEOUT_ERROR;
+ 245   2        }
+ 246   1      
+ 247   1        /* send address byte */
+ 248   1        SMB0DAT = (U8) (biAddress << 1u) & 0xFE;
+ 249   1      
+ 250   1        /* clear IT flag */
+ 251   1        SI = FALSE;
+ 252   1        /* delete start bit */
+ 253   1        STA = FALSE;
+ 254   1        /* wait address byte to be sent */
+ 255   1        if (!gSmbus_SMBusWaitForItWithTimeout()) {
+ 256   2          return SMBUS_TIMEOUT_ERROR;
+ 257   2        }
+ 258   1      
+ 259   1        if (FALSE == ACK) {
+ 260   2          /* Slave address is not acknowledged */
+ 261   2          vSmbus_DisableSMBusInterface();
+ 262   2      
+ 263   2          return SMBUS_WRONG_SLAVE_ADDRESS;
+ 264   2        }
+ 265   1      
+ 266   1        /* send data bytes */
+ 267   1        while (biLength--) {
+ 268   2          /* send next data bytes */
+ 269   2          SMB0DAT = *pbiData++;
+ 270   2      
+ 271   2          /* clear IT flag */
+ 272   2          SI = FALSE;
+ 273   2          /* wait data to be sent */
+ 274   2          if (!gSmbus_SMBusWaitForItWithTimeout()) {
+ 275   3            return SMBUS_TIMEOUT_ERROR;
+ 276   3          }
+ 277   2      
+ 278   2          if (TRUE == ARBLOST) {
+ 279   3            /* arbritation lost */
+ 280   3            vSmbus_DisableSMBusInterface();
+ 281   3      
+ 282   3            return SMBUS_ARBITRATION_LOST;
+ 283   3          }
+ 284   2        }
+ 285   1      
+ 286   1        /* all data byte sent */
+ 287   1        vSmbus_SMBusStop();
+ 288   1        vSmbus_DisableSMBusInterface();
+ 289   1      
+ 290   1        return SMBUS_TRANSMISSION_OK;
+ 291   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    297    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----       8
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+C51 COMPILER V9.56.0.0   SMBUS                                                             07/20/2018 15:28:25 PAGE 6   
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,846 @@
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE DOG_GLCD
+OBJECT MODULE PLACED IN dog_glcd.OBJ
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\c51.exe dog_glcd.c DB OE BR SMALL OPTIMIZE(11,SIZE) DEFINE(SILABS_PLATFORM_WMB91
+                    -2) DEFINE(SILABS_WMCU_SI106x)
+
+line level    source
+
+   1          /*! @file dog_glcd.c
+   2           * @brief This file contains functions to control the DOG LCD.
+   3           *
+   4           * @b COPYRIGHT
+   5           * @n Silicon Laboratories Confidential
+   6           * @n Copyright 2012 Silicon Laboratories, Inc.
+   7           * @n http://www.silabs.com
+   8           */
+   9          
+  10          #include "..\bsp.h"
+  11          
+  12          
+  13          #ifdef SILABS_LCD_DOG_GLCD
+  14          
+  15          /*------------------------------------------------------------------------*/
+  16          /*  Local Macros & Definitions                                            */
+  17          /*------------------------------------------------------------------------*/
+  18          #define LCD_BACKLIGHT_IS_USED
+  19          
+  20          /*------------------------------------------------------------------------*/
+  21          /*                          Global variables                              */
+  22          /*------------------------------------------------------------------------*/
+  23          SEGMENT_VARIABLE(fUnderline,          BIT, SEG_DATA) = FALSE;
+  24          SEGMENT_VARIABLE(fInvert,             BIT, SEG_DATA) = FALSE;
+  25          
+  26          SEGMENT_VARIABLE(bLcd_CurrentLine,    U8, SEG_IDATA);
+  27          SEGMENT_VARIABLE(bLcd_CurrentChPos,   U8, SEG_IDATA);
+  28          SEGMENT_VARIABLE(bLcd_CurrentPage,    U8, SEG_IDATA);
+  29          SEGMENT_VARIABLE(bLcd_CurrentColumn,  U8, SEG_IDATA);
+  30          
+  31          #ifdef LCD_DRIVER_EXTENDED_SUPPORT
+              SEGMENT_VARIABLE(LCDBuffer[bLcd_NumOfColumnsMax_c * 3u],  U8, SEG_XDATA);
+              #endif
+  34          
+  35          /*------------------------------------------------------------------------*/
+  36          /*                          Function implementations                      */
+  37          /*------------------------------------------------------------------------*/
+  38          
+  39          #if !(defined SOFTTIMER_H_)
+  40          /*!
+  41           * This function is used to wait about 2ms.
+  42           *
+  43           * @return  None.
+  44           *
+  45           * @note The delay depends on the clock of the MCU.
+  46           */
+  47          void vLcd_Delay2ms(void)
+  48          {
+  49   1              volatile SEGMENT_VARIABLE(Delay, U32, SEG_DATA);
+  50   1      
+  51   1              for (Delay = 0u; Delay < 0x9FFF; Delay++) ;
+  52   1      }
+  53          
+  54          #define LcdDelay(ms) { vLcd_Delay2ms(); vLcd_Delay2ms(); vLcd_Delay2ms(); vLcd_Delay2ms(); vLcd_Delay2ms()
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 2   
+
+             -; }
+  55          
+  56          #else
+              
+              /**
+               *  Wait about ms x 10ms.
+               *
+               *  @param[in]  ms Delay (x 10ms).
+               *
+               *  @note       Blocks code execution until elapses.
+               *
+               *****************************************************************************/
+              void LcdDelay(U8 ms)
+              {
+                /* Add Software Timer Channel no. 2 for LCD delay purposes */
+                SoftTimer_Add(ms, SOFTTIMER_CH2);
+                while (SoftTimer_Elapsed(SOFTTIMER_CH2) == FALSE) ;
+              }
+              
+              #endif
+  74          /*!
+  75           * This function is used to initialize the LCD for 3.3V operation voltage and SPI comm.
+  76           *
+  77           * @return  None.
+  78           *
+  79           * @note It can be called only 40ms after the VDD is stabilized.
+  80           */
+  81          BIT vLcd_InitLcd(void)
+  82          {
+  83   1        vSpi_SetNsel(eSpi_Nsel_LCD);
+  84   1        LCD_A0    = FALSE;
+  85   1      
+  86   1      #ifdef SPI_DRIVER_EXTENDED_SUPPORT
+                if (gSpi_SpiLcdDisabled == TRUE)
+                {
+              #if !(defined SPI_PERIPHERALS_ALWAYS_ENABLED)
+                  mSpi_EnableSpiLcd();
+              #endif
+                }
+              #endif
+  94   1      
+  95   1        LCD_A0    = FALSE;
+  96   1      
+  97   1        /* perform reset ~10ms */
+  98   1        LcdDelay(1u);
+  99   1      
+ 100   1              vSpi_ClearNsel(eSpi_Nsel_LCD);
+ 101   1      
+ 102   1              mSpi_ReadWriteSpiLcd(0x40);                     // display start line 0
+ 103   1              mSpi_ReadWriteSpiLcd(0xA1);                     // ADC reverse
+ 104   1              mSpi_ReadWriteSpiLcd(0xC0);                     // normal COM0~COM63
+ 105   1              mSpi_ReadWriteSpiLcd(0xA6);                     // display normal
+ 106   1              mSpi_ReadWriteSpiLcd(0xA2);                     // set bias 1/9 (Duty 1/65)
+ 107   1              mSpi_ReadWriteSpiLcd(0x2F);                     // booster, regulator and follower on
+ 108   1              mSpi_ReadWriteSpiLcd(0xF8);                     // set internal booster to 4x
+ 109   1              mSpi_ReadWriteSpiLcd(0x00);
+ 110   1      
+ 111   1      
+ 112   1              mSpi_ReadWriteSpiLcd(0x23);                     // contrast set
+ 113   1              mSpi_ReadWriteSpiLcd(0x81);
+ 114   1              mSpi_ReadWriteSpiLcd(0x1F);
+ 115   1      
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 3   
+
+ 116   1              mSpi_ReadWriteSpiLcd(0xAC);                     // no indicator
+ 117   1              mSpi_ReadWriteSpiLcd(0x00);
+ 118   1              vSpi_SetNsel(eSpi_Nsel_LCD);
+ 119   1      
+ 120   1              vLcd_LcdOff();
+ 121   1              vLcd_LcdClearDisplay();
+ 122   1              vLcd_LcdOn();
+ 123   1      
+ 124   1        return TRUE;
+ 125   1      }
+ 126          
+ 127          /*!
+ 128           * This function is used to turn on the LCD screen.
+ 129           *
+ 130           * @return  None.
+ 131           */
+ 132          void vLcd_LcdOn(void)
+ 133          {
+ 134   1        /* disable global interrupts */
+ 135   1        ENTER_CRITICAL_SECTION;
+ 136   1          
+ 137   1        vSpi_ClearNsel(eSpi_Nsel_LCD);
+ 138   1        mSpi_ReadWriteSpiLcd(0xAF);
+ 139   1        vSpi_SetNsel(eSpi_Nsel_LCD);
+ 140   1          
+ 141   1        /* enable global interrupts  */
+ 142   1        EXIT_CRITICAL_SECTION;
+ 143   1      }
+ 144          
+ 145          /*!
+ 146           * This function is used to turn off the LCD
+ 147           * screen (the DDRAM content will be kept).
+ 148           *
+ 149           * @return  None.
+ 150           */
+ 151          void vLcd_LcdOff(void)
+ 152          {
+ 153   1        /* disable global interrupts */
+ 154   1        ENTER_CRITICAL_SECTION;
+ 155   1          
+ 156   1        vSpi_ClearNsel(eSpi_Nsel_LCD);
+ 157   1        mSpi_ReadWriteSpiLcd(0xAE);
+ 158   1        vSpi_SetNsel(eSpi_Nsel_LCD);
+ 159   1      
+ 160   1        /* enable global interrupts  */
+ 161   1        EXIT_CRITICAL_SECTION;
+ 162   1      }
+ 163          
+ 164          /*!
+ 165           * This function is used to set the page address (0...7).
+ 166           *
+ 167           * @param[in] bi_DataIn  Page address: the LCD is separated to 8x8 rows
+ 168           * and 8 row is called as a page, page0 is the top 8 rows.
+ 169           *
+ 170           * @return  None.
+ 171           */
+ 172          void vLcd_LcdSetPage(U8 bi_DataIn)
+ 173          {
+ 174   1        /* disable global interrupts */
+ 175   1        ENTER_CRITICAL_SECTION;
+ 176   1          
+ 177   1        vSpi_ClearNsel(eSpi_Nsel_LCD);
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 4   
+
+ 178   1        mSpi_ReadWriteSpiLcd(0xB0 | bi_DataIn);
+ 179   1        vSpi_SetNsel(eSpi_Nsel_LCD);
+ 180   1          
+ 181   1        /* enable global interrupts  */
+ 182   1        EXIT_CRITICAL_SECTION;
+ 183   1      }
+ 184          
+ 185          /*!
+ 186           * This function is used to set the column address (0...131).
+ 187           *
+ 188           * @param[in] bi_DataIn  Column address.
+ 189           *
+ 190           * @return  None.
+ 191           */
+ 192          void vLcd_LcdSetColumn(U8 bi_DataIn)
+ 193          {
+ 194   1        /* disable global interrupts */
+ 195   1        ENTER_CRITICAL_SECTION;
+ 196   1      
+ 197   1        vSpi_ClearNsel(eSpi_Nsel_LCD);
+ 198   1        mSpi_ReadWriteSpiLcd(0x10 | ((bi_DataIn & 0xF0) >> 4));
+ 199   1        mSpi_ReadWriteSpiLcd(0x00 |  (bi_DataIn & 0x0F));
+ 200   1        vSpi_SetNsel(eSpi_Nsel_LCD);
+ 201   1      
+ 202   1        /* enable global interrupts  */
+ 203   1        EXIT_CRITICAL_SECTION;
+ 204   1      }
+ 205          
+ 206          /*!
+ 207           * This function is used to clear the display (the content of the DDRAM).
+ 208           *
+ 209           * @return  None.
+ 210           */
+ 211          void vLcd_LcdClearDisplay(void)
+ 212          {
+ 213   1        SEGMENT_VARIABLE(lPage, U8, SEG_DATA);
+ 214   1      
+ 215   1              for(lPage = 1u; lPage <= bLcd_NumOfLinesMax_c; lPage++) {
+ 216   2                vLcd_LcdClearLine(lPage);
+ 217   2              }
+ 218   1      }
+ 219          
+ 220          /**
+ 221           *  Fills the display (the content of the DDRAM!)
+ 222           *
+ 223           *  @note
+ 224           *
+ 225           *****************************************************************************/
+ 226          void LcdFillDisplay(void)
+ 227          {
+ 228   1        SEGMENT_VARIABLE(lPage,    U8, SEG_XDATA);
+ 229   1        SEGMENT_VARIABLE(col,    U8, SEG_XDATA);
+ 230   1      
+ 231   1        ENTER_CRITICAL_SECTION;
+ 232   1      
+ 233   1        for (lPage = 1u; lPage <= bLcd_NumOfLinesMax_c; lPage++)
+ 234   1        {
+ 235   2          /* select the page */
+ 236   2          vLcd_LcdSetPage(lPage - 1u);
+ 237   2          /* set to the first column */
+ 238   2          vLcd_LcdSetColumn(0u);
+ 239   2      
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 5   
+
+ 240   2          /* set A0 to 1 -> access to the DDRAM */
+ 241   2          LCD_A0    = TRUE;
+ 242   2          vSpi_ClearNsel(eSpi_Nsel_LCD);
+ 243   2      
+ 244   2          for (col = 0u; col < bLcd_NumOfColumnsMax_c; col++)
+ 245   2          {
+ 246   3            /* clear the selected column */
+ 247   3            mSpi_ReadWriteSpiLcd(0xFF);
+ 248   3          }
+ 249   2      
+ 250   2          LCD_A0    = FALSE;
+ 251   2          vSpi_SetNsel(eSpi_Nsel_LCD);
+ 252   2        }
+ 253   1      
+ 254   1        EXIT_CRITICAL_SECTION;
+ 255   1      }
+ 256          
+ 257          /*!
+ 258           * This function is used to clear one line on the LCD.
+ 259           *
+ 260           * @param[in] bi_DataIn  Line address.
+ 261           *
+ 262           * @return  None.
+ 263           */
+ 264          void vLcd_LcdClearLine(U8 bi_Line)
+ 265          {
+ 266   1        SEGMENT_VARIABLE(lColumn, U8, SEG_DATA);
+ 267   1      
+ 268   1        if ((bi_Line < bLcd_NumOfLinesMin_c) || (bi_Line > bLcd_NumOfLinesMax_c)) {
+ 269   2          return;
+ 270   2        }
+ 271   1      
+ 272   1        //select the page
+ 273   1        vLcd_LcdSetPage(bi_Line - 1);
+ 274   1      
+ 275   1        //set to the first column
+ 276   1        vLcd_LcdSetColumn(0);
+ 277   1      
+ 278   1        /* disable global interrupts */
+ 279   1        ENTER_CRITICAL_SECTION;
+ 280   1      
+ 281   1        //set A0 to 1 -> access to the DDRAM
+ 282   1        LCD_A0 = 1;
+ 283   1        vSpi_ClearNsel(eSpi_Nsel_LCD);
+ 284   1        for (lColumn = 0u; lColumn < bLcd_NumOfColumnsMax_c; lColumn++) {
+ 285   2          //clear the selected column
+ 286   2          mSpi_ReadWriteSpiLcd(0x00);
+ 287   2        }
+ 288   1        LCD_A0 = 0;
+ 289   1        vSpi_SetNsel(eSpi_Nsel_LCD);
+ 290   1      
+ 291   1        /* enable global interrupts  */
+ 292   1        EXIT_CRITICAL_SECTION;
+ 293   1      }
+ 294          
+ 295          /*!
+ 296           * This function is used to write one complete line on the LCD.
+ 297           *
+ 298           * @param[in] bi_Line  Line address.
+ 299           * @param[in] pbi_Text  Pointer to the text (char array).
+ 300           *
+ 301           * @return  None.
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 6   
+
+ 302           *
+ 303           * @note If the line is invalid, the function returns without any changes.
+ 304           * @note The function doesn't set the bLcd_CurrentLine,
+ 305           * bLcd_CurrentChPos variables.
+ 306           */
+ 307          void vLcd_LcdWriteLine(U8 biLine, U8 * pbiText)
+ 308          {
+ 309   1        if ((biLine < bLcd_NumOfLinesMin_c) || (biLine > bLcd_NumOfLinesMax_c)) {
+ 310   2          return;
+ 311   2        }
+ 312   1      
+ 313   1        vLcd_LcdClearLine(biLine);
+ 314   1      
+ 315   1        bLcd_CurrentLine = biLine - 1u;
+ 316   1        bLcd_CurrentColumn = 0u;
+ 317   1      
+ 318   1        vLcd_LcdWrite(pbiText);
+ 319   1      }
+ 320          
+ 321          /**
+ 322           *  Sets the LCD text position.
+ 323           *
+ 324           *  @param[in]  line Line number.
+ 325           *
+ 326           *  @param[in]  ch_pos Character horizontal position.
+ 327           *
+ 328           *  @return     \b TRUE - operation was successful <br>
+ 329           *              \b FALSE - operation was ignored.
+ 330           *
+ 331           *  @note
+ 332           *
+ 333           *****************************************************************************/
+ 334          BIT gLcd_LcdSetCharCursor(U8 biLine, U8 biChPos)
+ 335          {
+ 336   1        /* set page address */
+ 337   1        bLcd_CurrentLine = biLine;
+ 338   1        vLcd_LcdSetPage(biLine);
+ 339   1      
+ 340   1        /* set column address */
+ 341   1        bLcd_CurrentColumn = biChPos * 6u;
+ 342   1        vLcd_LcdSetColumn(bLcd_CurrentColumn);
+ 343   1      
+ 344   1        return TRUE;
+ 345   1      }
+ 346          
+ 347          /**
+ 348           *  Write string to LCD at actual position.
+ 349           *
+ 350           *  @param[in]  pText String to be written.
+ 351           *
+ 352           *  @note
+ 353           *
+ 354           *****************************************************************************/
+ 355          void vLcd_LcdWrite(U8 * pbi_pText)
+ 356          {
+ 357   1        SEGMENT_VARIABLE(lTemp  , U8, SEG_DATA);
+ 358   1        SEGMENT_VARIABLE(lColumn, U8, SEG_DATA);
+ 359   1        SEGMENT_VARIABLE(lChar  , U8, SEG_DATA);
+ 360   1      
+ 361   1        while (*pbi_pText)
+ 362   1        {
+ 363   2          /* Check Position */
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 7   
+
+ 364   2          if ((bLcd_CurrentColumn >= bLcd_NumOfColumnsMax_c) || \
+ 365   3              (bLcd_CurrentLine >= bLcd_NumOfLinesMax_c))    {
+ 366   3            bLcd_CurrentColumn = 0u;
+ 367   3            if (++bLcd_CurrentLine >= bLcd_NumOfLinesMax_c) {
+ 368   4              bLcd_CurrentLine = 0u;
+ 369   4            }
+ 370   3          }
+ 371   2      
+ 372   2          gLcd_LcdSetCharCursor(bLcd_CurrentLine, bLcd_CurrentColumn / 6u);
+ 373   2      
+ 374   2          if ((*pbi_pText > bLcd_Ascii5x7Max_c) || \
+ 375   3              (*pbi_pText < bLcd_Ascii5x7Min_c)) {
+ 376   3            lTemp = ' ' - bLcd_Ascii5x7Min_c;
+ 377   3          } else {
+ 378   3            lTemp = *pbi_pText - bLcd_Ascii5x7Min_c;
+ 379   3          }
+ 380   2          pbi_pText++;
+ 381   2      
+ 382   2          /* write character */
+ 383   2          LCD_A0 = TRUE;        /* set A0 to 1 -> access to the DDRAM */
+ 384   2          vSpi_ClearNsel(eSpi_Nsel_LCD);
+ 385   2      
+ 386   2          for (lColumn = 0u; lColumn < 5u; lColumn++)
+ 387   2          {
+ 388   3            lChar = ascii_table5x7[lTemp][lColumn];
+ 389   3      
+ 390   3            if (TRUE == fUnderline)  { lChar |= 0x80;  }
+ 391   3            if (TRUE == fInvert)     { lChar = ~lChar; }
+ 392   3      
+ 393   3            mSpi_ReadWriteSpiLcd(lChar);
+ 394   3          }
+ 395   2      
+ 396   2          /* space between the characters */
+ 397   2          lChar = 0x00;
+ 398   2          if (TRUE == fUnderline) { lChar |= 0x80;  }
+ 399   2          if (TRUE == fInvert)    { lChar = ~lChar; }
+ 400   2          mSpi_ReadWriteSpiLcd(lChar);
+ 401   2      
+ 402   2          LCD_A0   = FALSE;
+ 403   2          vSpi_SetNsel(eSpi_Nsel_LCD);
+ 404   2      
+ 405   2          /* Increment LCD Column position */
+ 406   2          bLcd_CurrentColumn += 6u;
+ 407   2        }
+ 408   1      }
+ 409          
+ 410          /**
+ 411           *  Write string to the center of the given line.
+ 412           *
+ 413           *  @param[in]  line Line number.
+ 414           *
+ 415           *  @param[in]  pText String to be written.
+ 416           *
+ 417           *  @note
+ 418           *
+ 419           *****************************************************************************/
+ 420          void vLcd_LcdWriteLineCenter(U8 bi_line, U8 * pbi_Text)
+ 421          {
+ 422   1        SEGMENT_VARIABLE(lIdx, U8, SEG_DATA) = 0u;
+ 423   1      
+ 424   1        if ((bi_line < bLcd_NumOfLinesMin_c) || (bi_line > bLcd_NumOfLinesMax_c))
+ 425   1        {
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 8   
+
+ 426   2          return;
+ 427   2        }
+ 428   1      
+ 429   1        /* Clear actual line */
+ 430   1        vLcd_LcdClearLine(bi_line);
+ 431   1      
+ 432   1        /* Count characters */
+ 433   1        while (*(pbi_Text + lIdx))
+ 434   1        {
+ 435   2          lIdx++;
+ 436   2        }
+ 437   1      
+ 438   1        if (lIdx < bLcd_NumOfCharsMax_c)
+ 439   1        {
+ 440   2          //bLcd_CurrentColumn = ((bLcd_NumOfCharsMax_c - lIdx) / 2u) * 6u;
+ 441   2          bLcd_CurrentColumn = ((bLcd_NumOfCharsMax_c - lIdx) * 6u) / 2u;
+ 442   2        }
+ 443   1        else
+ 444   1        {
+ 445   2          bLcd_CurrentColumn = 0u;
+ 446   2        }
+ 447   1        bLcd_CurrentLine = bi_line - 1u;
+ 448   1      
+ 449   1        vLcd_LcdWrite(pbi_Text);
+ 450   1      }
+ 451          
+ 452          
+ 453          /**
+ 454           *  Turns on Underline during text write on LCD.
+ 455           *
+ 456           *  @note
+ 457           *
+ 458           *****************************************************************************/
+ 459          void vLcd_LcdSetUnderline()
+ 460          {
+ 461   1        fUnderline = TRUE;
+ 462   1      }
+ 463          
+ 464          /**
+ 465           *  Turns off Underline during text write on LCD.
+ 466           *
+ 467           *  @note
+ 468           *
+ 469           *****************************************************************************/
+ 470          void vLcd_LcdClearUnderline()
+ 471          {
+ 472   1        fUnderline = FALSE;
+ 473   1      }
+ 474          
+ 475          /**
+ 476           *  Sets invert attribute when writing text to LCD.
+ 477           *
+ 478           *  @note
+ 479           *
+ 480           *****************************************************************************/
+ 481          void vLcd_LcdSetInvert()
+ 482          {
+ 483   1        fInvert = TRUE;
+ 484   1      }
+ 485          
+ 486          /**
+ 487           *  Clears invert attribute when writing text to LCD.
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 9   
+
+ 488           *
+ 489           *  @note
+ 490           *
+ 491           *****************************************************************************/
+ 492          void vLcd_LcdClearInvert()
+ 493          {
+ 494   1        fInvert = FALSE;
+ 495   1      }
+ 496          
+ 497          
+ 498          /*!
+ 499           * This function is used to set the character position.
+ 500           *
+ 501           * @param[in] bi_Page  Number of the pages (1...8) the LCD is divided to
+ 502           * 8 pages. Page1 is the top page.
+ 503           * @param[in] bi_Column  Number of start column. Column1 is the left one.
+ 504           *
+ 505           * @return  True if operation is successfull.
+ 506           *
+ 507           * @note If the position is invalid, the function returns without changing the
+ 508           * registers.
+ 509           * @note The function sets the bLcd_CurrentLine, bLcd_CurrentChPos variables.
+ 510           */
+ 511          U8 bLcd_LcdSetPictureCursor(U8 bi_Page, U8 bi_Column)
+ 512          {
+ 513   1              //check whether the input parameters are correct
+ 514   1              if ( ((bi_Page < bLcd_NumOfLinesMin_c)     || \
+ 515   2                    (bi_Page > bLcd_NumOfLinesMax_c))    || \
+ 516   2                   ((bi_Column < bLcd_NumOfColumnsMin_c) || \
+ 517   2                    (bi_Column > bLcd_NumOfColumnsMax_c)) ) {
+ 518   2                return FALSE;
+ 519   2              }
+ 520   1      
+ 521   1              //set page address
+ 522   1              vLcd_LcdSetPage(bi_Page-1);
+ 523   1              //set column address
+ 524   1              vLcd_LcdSetColumn( bi_Column-1 );
+ 525   1              bLcd_CurrentPage = bi_Page;
+ 526   1              bLcd_CurrentColumn = bi_Column;
+ 527   1      
+ 528   1              return TRUE;
+ 529   1      }
+ 530          
+ 531          /*!
+ 532           * This function is used to draw a picture on the LCD screen.
+ 533           *
+ 534           * @param[in] pi_Picture  The address of the picture, the picture must be stored
+ 535           * in the FLASH.
+ 536           *
+ 537           * @return  None.
+ 538           *
+ 539           * @note bLcd_LcdSetPictureCursor(uint8 page, uint8 column) function has to be
+ 540           * called before calling this function.
+ 541           * @note The function sets the bLcd_CurrentPage and bLcd_CurrentColumn variable.
+ 542           */
+ 543          void vLcd_LcdDrawPicture(const U8 * pi_Picture)
+ 544          {
+ 545   1        SEGMENT_VARIABLE(pages, U8,   SEG_DATA);
+ 546   1        SEGMENT_VARIABLE(page,  U8,   SEG_DATA);
+ 547   1        SEGMENT_VARIABLE(col,   U8,   SEG_DATA);
+ 548   1        SEGMENT_VARIABLE(ii,    U8,   SEG_DATA);
+ 549   1        SEGMENT_VARIABLE(jj,    U16,  SEG_DATA);
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 10  
+
+ 550   1      
+ 551   1        // checks whether there are enough column for the picture or not
+ 552   1        col = ((bLcd_NumOfColumnsMax_c - bLcd_CurrentColumn + 1) <      \
+ 553   1                pi_Picture[bLcd_PictureColumnNum_c]) ?                  \
+ 554   1                    (bLcd_NumOfColumnsMax_c - bLcd_CurrentColumn + 1) : \
+ 555   1                    pi_Picture[bLcd_PictureColumnNum_c];
+ 556   1      
+ 557   1        // check whether there are enough pages for the picture or not
+ 558   1        page = ((bLcd_NumOfLinesMax_c - bLcd_CurrentPage + 1) <         \
+ 559   1                 pi_Picture[bLcd_PicturePageNum_c]) ?                   \
+ 560   1                     (bLcd_NumOfLinesMax_c - bLcd_CurrentPage + 1) :    \
+ 561   1                     pi_Picture[bLcd_PicturePageNum_c];
+ 562   1      
+ 563   1        // draw the picture
+ 564   1        for (pages = 0u; pages < page; pages++) {
+ 565   2          ENTER_CRITICAL_SECTION;                             // disable global interrupts
+ 566   2              
+ 567   2          LCD_A0 = 1;                 //set A0 to 1 -> access to the DDRAM
+ 568   2          vSpi_ClearNsel(eSpi_Nsel_LCD);
+ 569   2          jj = bLcd_PictureAddressOffset_c + pages;
+ 570   2          for (ii = 0u; ii < col; ii++) {
+ 571   3            // write column data
+ 572   3            mSpi_ReadWriteSpiLcd(pi_Picture[jj]);
+ 573   3            jj += pi_Picture[bLcd_PicturePageNum_c];
+ 574   3          }
+ 575   2          LCD_A0 = 0;
+ 576   2          vSpi_SetNsel(eSpi_Nsel_LCD);
+ 577   2      
+ 578   2          EXIT_CRITICAL_SECTION;                             // enable global interrupts
+ 579   2          //set next page
+ 580   2          bLcd_LcdSetPictureCursor(++bLcd_CurrentPage, bLcd_CurrentColumn);
+ 581   2        }
+ 582   1      }
+ 583          
+ 584          #ifdef LCD_DRIVER_EXTENDED_SUPPORT
+              void vLcd_LcdDrawVerticalLine(U8 Y1, U8 Y2, U8 X, U8 clr)
+              {
+                SEGMENT_VARIABLE(lTmp, U8, SEG_DATA) = 0u;
+              
+                if (Y1 > Y2) {
+                  return;
+                }
+              
+                while (((Y1/8u) >= lTmp) && (clr)) {
+                  bLcd_LcdSetPictureCursor(++lTmp, X + 1u);
+              
+                  /* Draw line within the same Page */
+                  LCD_A0   = 1;     //set A0 to 1 -> access to the DDRAM
+                  LCD_NSEL = 0;
+                  mSpi_ReadWriteSpiLcd(0x00);
+                  LCD_A0   = 0;     //set A0 to 1 -> access to the DDRAM
+                  LCD_NSEL = 1;
+                }
+              
+                do {
+                  if ((Y2/8u) > (Y1/8u)) {
+                    lTmp = (Y1/8u + 1u) * 8u - 1u;
+                  } else {
+                    lTmp = Y2;
+                  }
+                  bLcd_LcdSetPictureCursor((Y1/8u) + 1u, X + 1u);
+              
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 11  
+
+                  /* Draw line within the same Page */
+                  LCD_A0   = 1;     //set A0 to 1 -> access to the DDRAM
+                  LCD_NSEL = 0;
+                  mSpi_ReadWriteSpiLcd((0xFF << (Y1%8u)) & (0xFF >> (7u - (lTmp%8u))));
+                  LCD_A0   = 0;     //set A0 to 1 -> access to the DDRAM
+                  LCD_NSEL = 1;
+              
+                  if ((Y2/8u) == (Y1/8u)) {
+                    return;
+                  }
+              
+                  Y1 = (Y1/8u + 1u) * 8u;
+                } while(TRUE);
+              }
+              
+              void vLcd_DrawClearLine(U8 line, U8 column)
+              {
+                SEGMENT_VARIABLE(ii, U16, SEG_DATA);
+              
+                if (line >= (sizeof(LCDBuffer) / bLcd_NumOfColumnsMax_c)) {
+                  return;
+                }
+              
+                for (ii = (line * bLcd_NumOfColumnsMax_c) + column; \
+                     ii < ((line + 1) * bLcd_NumOfColumnsMax_c); ii++) {
+                  LCDBuffer[ii] = 0x00;
+                }
+              }
+              
+              void vLcd_DrawText(U8 line, U8 col, U8 * pStr)
+              {
+                SEGMENT_VARIABLE(ii, U8, SEG_DATA);
+                SEGMENT_VARIABLE(lTemp, U8, SEG_DATA);
+              
+                while (*pStr) {
+                  /* Check Position */
+                  if ((col >= bLcd_NumOfColumnsMax_c) || \
+                      (line >= (sizeof(LCDBuffer) / bLcd_NumOfColumnsMax_c)))    {
+                    bLcd_CurrentColumn = 0u;
+                    if (++line >= (sizeof(LCDBuffer) / bLcd_NumOfColumnsMax_c)) {
+                      line = 0u;
+                    }
+                  }
+              
+                  if ((*pStr > bLcd_Ascii5x7Max_c) || \
+                      (*pStr < bLcd_Ascii5x7Min_c)) {
+                    lTemp = ' ' - bLcd_Ascii5x7Min_c;
+                  } else {
+                    lTemp = *pStr - bLcd_Ascii5x7Min_c;
+                  }
+                  pStr++;
+              
+                  for (ii = 0u; ii < 5u; ii++) {
+                    LCDBuffer[(line * bLcd_NumOfColumnsMax_c) + col++] = \
+                            ascii_table5x7[lTemp][ii];
+                  }
+                  col++;
+                }
+              }
+              
+              void vLcd_DrawTextCenter(U8 line, U8 * pStr)
+              {
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 12  
+
+                SEGMENT_VARIABLE(lCnt, U8, SEG_DATA) = 0u;
+              
+                while (*(pStr + lCnt))  lCnt++;
+              
+                if (lCnt > 22u)
+                  return;
+              
+                vLcd_DrawText(line, (bLcd_NumOfColumnsMax_c - (lCnt * 6u)) / 2u, pStr);
+              }
+              
+              BIT gLcd_DrawMoveArea(U8 columnStart, U8 columnEnd, U8 dir)
+              {
+                SEGMENT_VARIABLE(lCnt, U16, SEG_DATA);
+                static SEGMENT_VARIABLE(lRow, U8, SEG_DATA) = 0u;
+                static SEGMENT_VARIABLE(lInvoke, U8, SEG_DATA) = 0u;
+              
+                if (++lInvoke > LCD_INVOKE_COUNT) {
+                  lInvoke = 0u;
+              
+                  if (dir) {
+                    for (lCnt = columnStart; lCnt < sizeof(LCDBuffer); lCnt++) {
+                      if (((lCnt % bLcd_NumOfColumnsMax_c) < columnStart) || \
+                          ((lCnt % bLcd_NumOfColumnsMax_c) > columnEnd)) {
+                        continue;
+                      }
+              
+                      if ((lCnt >= bLcd_NumOfColumnsMax_c) && (LCDBuffer[lCnt] & 0x01)) {
+                        LCDBuffer[lCnt - bLcd_NumOfColumnsMax_c] |= 0x80;
+                      }
+                      LCDBuffer[lCnt] >>= 1u;
+                    }
+                  } else {
+                    for (lCnt = sizeof(LCDBuffer); lCnt > columnStart; lCnt--) {
+                      if ((((lCnt - 1u) % bLcd_NumOfColumnsMax_c) < columnStart) || \
+                          (((lCnt - 1u) % bLcd_NumOfColumnsMax_c) > columnEnd)) {
+                        continue;
+                      }
+              
+                      if (((lCnt - 1u) < (sizeof(LCDBuffer) - bLcd_NumOfColumnsMax_c)) && \
+                          (LCDBuffer[(lCnt - 1u)] & 0x80)) {
+                        LCDBuffer[(lCnt - 1u) + bLcd_NumOfColumnsMax_c] |= 0x01;
+                      }
+                      LCDBuffer[(lCnt - 1u)] <<= 1u;
+                    }
+                  }
+              
+                  if (++lRow >= 8u) {
+                    lRow = 0u;
+                    return TRUE;
+                  }
+                }
+              
+                return FALSE;
+              }
+              
+              BIT gLcd_DrawInsertLine(U8 column, U8 dir, U8 * pStr)
+              {
+                SEGMENT_VARIABLE(lCnt, U8, SEG_DATA) = 0u;
+                static SEGMENT_VARIABLE(lState, U8, SEG_DATA) = 0u;
+              
+                switch (lState) {
+                case 0u:
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 13  
+
+                  while (*(pStr + lCnt))  lCnt++;
+              
+                  if (lCnt > (bLcd_NumOfColumnsMax_c - column) / 6u) {
+                    lState = 0u;
+              
+                    return TRUE;
+                  }
+              
+                  lState++;
+                  break;
+              
+                case 1u:
+                  if (gLcd_DrawMoveArea(column, bLcd_NumOfColumnsMax_c, dir) == TRUE) {
+                    lState++;
+                  }
+                  break;
+              
+                case 2u:
+                  vLcd_DrawText((dir) ? \
+                      ((sizeof(LCDBuffer) / bLcd_NumOfColumnsMax_c) - 1u) : 0u, column, pStr);
+                  lState = 0u;
+                  return TRUE;
+                  break;
+              
+                default:
+                  lState = 0u;
+                  break;
+                }
+              
+                return FALSE;
+              }
+              
+              void vLcd_DrawBuffer(void)
+              {
+                SEGMENT_VARIABLE(ii, U16, SEG_DATA);
+              
+                for (ii = 0u; ii < sizeof(LCDBuffer); ii++) {
+                  if ((ii % bLcd_NumOfColumnsMax_c) == 0u) {
+                    LCD_A0   = 0;
+                    LCD_NSEL = 1;
+                    bLcd_LcdSetPictureCursor(bLcd_NumOfLinesMin_c + \
+                          (ii / bLcd_NumOfColumnsMax_c), bLcd_NumOfColumnsMin_c);
+                    LCD_A0   = 1;     //set A0 to 1 -> access to the DDRAM
+                    LCD_NSEL = 0;
+                  }
+                  mSpi_ReadWriteSpiLcd(LCDBuffer[ii]);
+                }
+              
+                LCD_A0   = 0;
+                LCD_NSEL = 1;
+              }
+              
+              U8 *pLcd_DrawGetBuffer()
+              {
+                return LCDBuffer;
+              }
+              
+              #endif
+ 794          
+ 795          #endif
+
+
+C51 COMPILER V9.56.0.0   DOG_GLCD                                                          07/20/2018 15:28:24 PAGE 14  
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1124    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----       2
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      35
+   IDATA SIZE       =      4    ----
+   BIT SIZE         =      2    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
