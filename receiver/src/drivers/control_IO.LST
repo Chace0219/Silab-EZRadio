@@ -1,0 +1,215 @@
+C51 COMPILER V9.53.0.0   CONTROL_IO                                                        07/02/2018 16:33:04 PAGE 1   
+
+
+C51 COMPILER V9.53.0.0, COMPILATION OF MODULE CONTROL_IO
+OBJECT MODULE PLACED IN control_IO.OBJ
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\c51.exe control_IO.c DB OE BR SMALL OPTIMIZE(11,SIZE) DEFINE(SILABS_PLATFORM_WMB
+                    -912) DEFINE(SILABS_WMCU_SI106x)
+
+line level    source
+
+   1          /*! @file control_IO.c
+   2           * @brief This file contains functions for controlling LEDs and PBs.
+   3           *
+   4           * @b COPYRIGHT
+   5           * @n Silicon Laboratories Confidential
+   6           * @n Copyright 2012 Silicon Laboratories, Inc.
+   7           * @n http://www.silabs.com
+   8           */
+   9          
+  10          #include "..\bsp.h"
+  11          
+  12          /*------------------------------------------------------------------------*/
+  13          /*                          Global variables                              */
+  14          /*------------------------------------------------------------------------*/
+  15          
+  16          
+  17          /*------------------------------------------------------------------------*/
+  18          /*                           Local variables                              */
+  19          /*------------------------------------------------------------------------*/
+  20          #if (!(defined SILABS_PLATFORM_RFSTICK) && !(defined SILABS_PLATFORM_LCDBB))
+  21          volatile SEGMENT_VARIABLE(bDelay, U8, SEG_XDATA);
+  22          #endif
+  23          
+  24          SEGMENT_VARIABLE(bCio_IoPortState, U8, SEG_DATA);
+  25          
+  26          
+  27          /*------------------------------------------------------------------------*/
+  28          /*                             Local macros                               */
+  29          /*------------------------------------------------------------------------*/
+  30          #if (!(defined SILABS_PLATFORM_RFSTICK) && !(defined SILABS_PLATFORM_LCDBB))
+  31            #define mCio_WaitIOSteadyState  \
+  32                                        for (bDelay = 0u; bDelay < 0x01; bDelay++)  ;
+  33          
+  34            #if (defined SILABS_MCU_DC_EMIF_F930)
+                  #define mCio_WaitIOSteadyState_long \
+                                            for (bDelay = 0u; bDelay < 0x3F; bDelay++)  ;
+                #endif
+  38          #endif
+  39          
+  40          /*------------------------------------------------------------------------*/
+  41          /*                          Function implementations                      */
+  42          /*------------------------------------------------------------------------*/
+  43          
+  44          /*!
+  45           * This function is used to initialize specific IO port for LED & PB.
+  46           *
+  47           *  @return None
+  48           *
+  49           *  @note It has to be called from the initialization section.
+  50           */
+  51          void vCio_InitIO(void)
+  52          {
+  53   1          bCio_IoPortState = (M_LED1) | (M_LED2) | (M_LED3);
+  54   1      }
+C51 COMPILER V9.53.0.0   CONTROL_IO                                                        07/02/2018 16:33:04 PAGE 2   
+
+  55          
+  56          /*!
+  57           * This function is used to switch the selected LED on.
+  58           *
+  59           * @param[in] biLedNum  Number of the LED to be switched on (1 ... 4).
+  60           *
+  61           * @return None
+  62           */
+  63          void vCio_SetLed(U8 biLedNum)
+  64          {
+  65   1        switch(biLedNum)
+  66   1        {
+  67   2          case 1:
+  68   2            LED1 = ILLUMINATE;
+  69   2            bCio_IoPortState &= (~M_LED1);
+  70   2            break;
+  71   2      
+  72   2          case 2:
+  73   2            bCio_IoPortState &= (~M_LED2);
+  74   2            LED2 = ILLUMINATE;
+  75   2            break;
+  76   2      
+  77   2          case 3:
+  78   2            bCio_IoPortState &= (~M_LED3);
+  79   2            LED3 = ILLUMINATE;
+  80   2            break;
+  81   2      
+  82   2          default:
+  83   2            break;
+  84   2        }
+  85   1      
+  86   1      }
+  87          
+  88          /*!
+  89           * This function is used to switch the selected LED off.
+  90           *
+  91           * @param[in] biLedNum Number of the LED to be switched off (1 ... 4).
+  92           *
+  93           * @return None
+  94           */
+  95          void vCio_ClearLed(U8 biLedNum)
+  96          {
+  97   1        switch(biLedNum)
+  98   1        {
+  99   2          case 1:
+ 100   2            LED1 = EXTINGUISH;
+ 101   2            bCio_IoPortState |= M_LED1;
+ 102   2            break;
+ 103   2      
+ 104   2          case 2:
+ 105   2            bCio_IoPortState |= M_LED2;
+ 106   2            LED2 = EXTINGUISH;
+ 107   2            break;
+ 108   2      
+ 109   2          case 3:
+ 110   2            bCio_IoPortState |= M_LED3;
+ 111   2            LED3 = EXTINGUISH;
+ 112   2            break;
+ 113   2      
+ 114   2          default:
+ 115   2            break;
+ 116   2        }
+C51 COMPILER V9.53.0.0   CONTROL_IO                                                        07/02/2018 16:33:04 PAGE 3   
+
+ 117   1      }
+ 118          
+ 119          /**
+ 120           * Function to toggle the given LED state.
+ 121           *
+ 122           * @param[in] biLedNum Number of the LED to be toggled off (1 ... 4).
+ 123           *
+ 124           * @return None.
+ 125           */
+ 126          void vCio_ToggleLed(U8 biLedNum)
+ 127          {
+ 128   1        switch(biLedNum)
+ 129   1        {
+ 130   2          case 1:
+ 131   2            if (bCio_IoPortState & M_LED1)
+ 132   2              vCio_SetLed(biLedNum);
+ 133   2            else
+ 134   2              vCio_ClearLed(biLedNum);
+ 135   2            break;
+ 136   2      
+ 137   2          case 2:
+ 138   2            if (bCio_IoPortState & M_LED2)
+ 139   2              vCio_SetLed(biLedNum);
+ 140   2            else
+ 141   2              vCio_ClearLed(biLedNum);
+ 142   2            break;
+ 143   2      
+ 144   2          case 3:
+ 145   2            if (bCio_IoPortState & M_LED3)
+ 146   2              vCio_SetLed(biLedNum);
+ 147   2            else
+ 148   2              vCio_ClearLed(biLedNum);
+ 149   2            break;
+ 150   2      
+ 151   2          default:
+ 152   2            break;
+ 153   2        }
+ 154   1      
+ 155   1      }
+ 156          
+ 157          /*!
+ 158           * This function is used to read the status of the selected push-button.
+ 159           *
+ 160           * @param[in] biPbNum Number of the push-button to be switched on (1 ... 4).
+ 161           *
+ 162           * @return State of the selected PB.
+ 163           *
+ 164           * @note If SILABS_IO_WITH_EXTENDER defined the function implements a "cache"
+ 165           * algorithm to eliminate the SMBus communication overhead. As the IOExt returns
+ 166           * all PB states in one byte queries for each PB state is unnecessary. The SMBus
+ 167           * fetch takes place only in case the PB state has been already read.
+ 168           */
+ 169          BIT gCio_GetPB(U8 biPbNum)
+ 170          {
+ 171   1        BIT s;
+ 172   1        //check whether the selected button was pressed or not
+ 173   1        switch (biPbNum)
+ 174   1        {
+ 175   2          case 1:
+ 176   2            s = PB1;
+ 177   2          break;
+ 178   2      
+C51 COMPILER V9.53.0.0   CONTROL_IO                                                        07/02/2018 16:33:04 PAGE 4   
+
+ 179   2          default:
+ 180   2            s = 1;
+ 181   2          break;
+ 182   2        }
+ 183   1      
+ 184   1        return s;
+ 185   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    119    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      1    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      1    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       1
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

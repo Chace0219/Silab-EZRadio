@@ -1,0 +1,183 @@
+C51 COMPILER V9.53.0.0   RADIO                                                             07/02/2018 16:33:05 PAGE 1   
+
+
+C51 COMPILER V9.53.0.0, COMPILATION OF MODULE RADIO
+OBJECT MODULE PLACED IN radio.OBJ
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\c51.exe radio.c DB OE BR SMALL OPTIMIZE(11,SIZE) DEFINE(SILABS_PLATFORM_WMB912) 
+                    -DEFINE(SILABS_WMCU_SI106x)
+
+line level    source
+
+   1          /*! @file radio.c
+   2           * @brief This file contains functions to interface with the radio chip.
+   3           *
+   4           * @b COPYRIGHT
+   5           * @n Silicon Laboratories Confidential
+   6           * @n Copyright 2012 Silicon Laboratories, Inc.
+   7           * @n http://www.silabs.com
+   8           */
+   9          
+  10          #include "..\bsp.h"
+  11          
+  12          /*****************************************************************************
+  13           *  Local Macros & Definitions
+  14           *****************************************************************************/
+  15          
+  16          /*****************************************************************************
+  17           *  Global Variables
+  18           *****************************************************************************/
+  19          const SEGMENT_VARIABLE(Radio_Configuration_Data_Array[], U8, SEG_CODE) = \
+  20                        RADIO_CONFIGURATION_DATA_ARRAY;
+  21          
+  22          const SEGMENT_VARIABLE(RadioConfiguration, tRadioConfiguration, SEG_CODE) = \
+  23                                  RADIO_CONFIGURATION_DATA;
+  24          
+  25          const SEGMENT_VARIABLE_SEGMENT_POINTER(pRadioConfiguration, tRadioConfiguration, SEG_CODE, SEG_CODE) = \
+  26                                  &RadioConfiguration;
+  27          
+  28          
+  29          SEGMENT_VARIABLE(fixRadioPacket[RADIO_MAX_PACKET_LENGTH], U8, SEG_XDATA);
+  30          
+  31          /*****************************************************************************
+  32           *  Local Function Declarations
+  33           *****************************************************************************/
+  34          void vRadio_PowerUp(void);
+  35          
+  36          /*!
+  37           *  Power up the Radio.
+  38           *
+  39           *  @note
+  40           *
+  41           */
+  42          void vRadio_PowerUp(void)
+  43          {
+  44   1        SEGMENT_VARIABLE(wDelay,  U16, SEG_XDATA) = 0u;
+  45   1      
+  46   1        /* Hardware reset the chip */
+  47   1        si4455_reset();
+  48   1      
+  49   1        /* Wait until reset timeout or Reset IT signal */
+  50   1        for (; wDelay < pRadioConfiguration->Radio_Delay_Cnt_After_Reset; wDelay++);
+  51   1      }
+  52          
+  53          /*!
+  54           *  Radio Initialization.
+C51 COMPILER V9.53.0.0   RADIO                                                             07/02/2018 16:33:05 PAGE 2   
+
+  55           *
+  56           *  @author Sz. Papp
+  57           *
+  58           *  @note
+  59           *
+  60           */
+  61          void vRadio_Init(void)
+  62          {
+  63   1        U16 wDelay;
+  64   1      
+  65   1        /* Power Up the radio chip */
+  66   1        vRadio_PowerUp();
+  67   1      
+  68   1        /* Load radio configuration */
+  69   1        while (SI4455_SUCCESS != si4455_configuration_init(pRadioConfiguration->Radio_ConfigurationArray))
+  70   1        {
+  71   2          /* Error hook */
+  72   2      #if !(defined SILABS_PLATFORM_WMB912)
+                  LED4 = !LED4;
+              #else
+  75   2          vCio_ToggleLed(eHmi_Led4_c);
+  76   2      #endif
+  77   2          for (wDelay = 0x7FFF; wDelay--; ) ;
+  78   2      
+  79   2          /* Power Up the radio chip */
+  80   2          vRadio_PowerUp();
+  81   2        }
+  82   1      
+  83   1        // Read ITs, clear pending ones
+  84   1        si4455_get_int_status(0u, 0u, 0u);
+  85   1      }
+  86          
+  87          /*!
+  88           *  Check if Packet received IT flag is pending.
+  89           *
+  90           *  @return   TRUE - Packet successfully received / FALSE - No packet pending.
+  91           *
+  92           *  @note
+  93           *
+  94           */
+  95          BIT gRadio_CheckReceived(void)
+  96          {
+  97   1        if (RF_NIRQ == FALSE)
+  98   1        {
+  99   2          /* Read ITs, clear pending ones */
+ 100   2          si4455_get_int_status(0u, 0u, 0u);
+ 101   2      
+ 102   2          /* check the reason for the IT */
+ 103   2          if (Si4455Cmd.GET_INT_STATUS.PH_PEND & SI4455_CMD_GET_INT_STATUS_REP_PACKET_RX_PEND_BIT)
+ 104   2          {
+ 105   3            /* Packet RX */
+ 106   3            si4455_read_rx_fifo(RadioConfiguration.Radio_PacketLength, (U8 *) &fixRadioPacket[0u]);
+ 107   3      
+ 108   3      #ifdef UART_LOGGING_SUPPORT
+                    {
+                        U8 lCnt;
+                        
+                        /* Send it to UART */
+                        for (lCnt = 0u; lCnt < RadioConfiguration.Radio_PacketLength; lCnt++)
+                        {
+                          Comm_IF_SendUART(*((U8 *) &fixRadioPacket[0u] + lCnt));
+                        }
+C51 COMPILER V9.53.0.0   RADIO                                                             07/02/2018 16:33:05 PAGE 3   
+
+                        Comm_IF_SendUART('\n');
+                    }
+              #endif
+ 120   3      
+ 121   3            return TRUE;
+ 122   3          }
+ 123   2      
+ 124   2          if (Si4455Cmd.GET_INT_STATUS.PH_PEND & SI4455_CMD_GET_INT_STATUS_REP_CRC_ERROR_BIT)
+ 125   2          {
+ 126   3            /* Reset FIFO */
+ 127   3            si4455_fifo_info(SI4455_CMD_FIFO_INFO_ARG_RX_BIT);
+ 128   3          }
+ 129   2        }
+ 130   1      
+ 131   1        return FALSE;
+ 132   1      }
+ 133          
+ 134          /*!
+ 135           *  Set Radio to RX mode, fixed packet length.
+ 136           *
+ 137           *  @param channel Freq. Channel
+ 138           *
+ 139           *  @note
+ 140           *
+ 141           */
+ 142          void vRadio_StartRX(U8 channel)
+ 143          {
+ 144   1        // Read ITs, clear pending ones
+ 145   1        si4455_get_int_status(0u, 0u, 0u);
+ 146   1      
+ 147   1        /* Start Receiving packet, channel 0, START immediately, Packet n bytes long */
+ 148   1        si4455_start_rx(channel, 0u, RadioConfiguration.Radio_PacketLength,
+ 149   1                        SI4455_CMD_START_RX_ARG_RXTIMEOUT_STATE_ENUM_NOCHANGE,
+ 150   1                        SI4455_CMD_START_RX_ARG_RXVALID_STATE_ENUM_RX,
+ 151   1                        SI4455_CMD_START_RX_ARG_RXINVALID_STATE_ENUM_RX );
+ 152   1      
+ 153   1        /* Switch on LED1 to show RX state */
+ 154   1        vHmi_ChangeLedState(eHmi_Led1_c, eHmi_LedOn_c);
+ 155   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    190    ----
+   CONSTANT SIZE    =    284    ----
+   XDATA SIZE       =     64       2
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----       1
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,374 @@
+C51 COMPILER V9.53.0.0   MAIN                                                              07/02/2018 16:33:04 PAGE 1   
+
+
+C51 COMPILER V9.53.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\c51.exe main.c DB OE BR SMALL OPTIMIZE(11,SIZE) DEFINE(SILABS_PLATFORM_WMB912) D
+                    -EFINE(SILABS_WMCU_SI106x)
+
+line level    source
+
+   1          /*! @file main.c
+   2           * @brief The main.c file of the Fixed packet length RX demo for Si4455 devices.
+   3           *
+   4           * Contains the initialization of the MCU & the radio.
+   5           * @n The main loop controls the program flow & the radio.
+   6           *
+   7           * @b CREATED
+   8           * @n Silicon Laboratories Ltd.
+   9           *
+  10           * @b COPYRIGHT
+  11           * @n Silicon Laboratories Confidential
+  12           * @n Copyright 2012 Silicon Laboratories, Inc.
+  13           * @n http://www.silabs.com
+  14           *
+  15           */
+  16          
+  17          #include "..\bsp.h"
+  18          
+  19          
+  20          /*------------------------------------------------------------------------*/
+  21          /*                          Global variables                              */
+  22          /*------------------------------------------------------------------------*/
+  23          
+  24          /*------------------------------------------------------------------------*/
+  25          /*                          Local variables                               */
+  26          /*------------------------------------------------------------------------*/
+  27          
+  28          /*------------------------------------------------------------------------*/
+  29          /*                      Local function prototypes                         */
+  30          /*------------------------------------------------------------------------*/
+  31          void vPlf_McuInit        (void);
+  32          void vInitializeHW       (void);
+  33          void DemoApp_Pollhandler (void);
+  34          
+  35          /*------------------------------------------------------------------------*/
+  36          /*                          Function implementations                      */
+  37          /*------------------------------------------------------------------------*/
+  38          
+  39          /** \fn void main(void)
+  40           * \brief The main function of the demo.
+  41           *
+  42           * \todo Create description
+  43           */
+  44          void main(void)
+  45          {
+  46   1        // Initialize the Hardware and Radio
+  47   1        vInitializeHW();
+  48   1      
+  49   1      #ifdef SILABS_LCD_DOG_GLCD
+  50   1        /* Initialize graphic LCD */
+  51   1        vLcd_InitLcd();
+  52   1      
+  53   1        /* Set logo location to center */
+  54   1        bLcd_LcdSetPictureCursor(bLcd_Line1_c, 35u);
+C51 COMPILER V9.53.0.0   MAIN                                                              07/02/2018 16:33:04 PAGE 2   
+
+  55   1      
+  56   1        /* Draw SiLabs logo */
+  57   1        vLcd_LcdDrawPicture(silabs66x30);
+  58   1      #endif
+  59   1      
+  60   1        // Start RX
+  61   1        vRadio_StartRX(pRadioConfiguration->Radio_ChannelNumber);
+  62   1              vHmi_ChangeLedState(eHmi_Led1_c, eHmi_LedBlink1Hz_c);
+  63   1        while (TRUE)
+  64   1        {
+  65   2          // The following Handlers requires care on invoking time interval
+  66   2          if (wIsr_Timer2Tick)
+  67   2          {
+  68   3            vHmi_LedHandler();
+  69   3            vHmi_BuzzHandler();
+  70   3            vHmi_PbHandler();
+  71   3      
+  72   3            wIsr_Timer2Tick = 0;
+  73   3          }
+  74   2      
+  75   2          // Demo Application Poll-Handler function
+  76   2          // DemoApp_Pollhandler();
+  77   2        }
+  78   1      }
+  79          
+  80          /**
+  81           *  Demo Application Poll-Handler
+  82           *
+  83           *  @note This function must be called periodically.
+  84           *
+  85           */
+  86          void DemoApp_Pollhandler()
+  87          {
+  88   1        U8 lButton = 0xFF;
+  89   1      
+  90   1        // Check if radio packet received
+  91   1        if (TRUE == gRadio_CheckReceived())
+  92   1        {
+  93   2          // Check if the radio packet contains "BUTTON" string
+  94   2          if (gSampleCode_StringCompare((U8 *) &fixRadioPacket[0u], "BUTTON", 6u) == TRUE)
+  95   2          {
+  96   3            // Search for button index number (from '1' to '4')
+  97   3            lButton = fixRadioPacket[6u] - 0x30;
+  98   3      
+  99   3            vHmi_ChangeBuzzState(eHmi_BuzzOnce_c);
+ 100   3          }
+ 101   2          else if (fixRadioPacket[0u] == fixRadioPacket[2u])
+ 102   2          {
+ 103   3            /* Packet sent by old Keyfob */
+ 104   3      
+ 105   3            switch (fixRadioPacket[0u])
+ 106   3            {
+ 107   4              case 0xD7:
+ 108   4                lButton = 0x01;
+ 109   4                break;
+ 110   4      
+ 111   4              case 0xF5:
+ 112   4                lButton = 0x02;
+ 113   4                break;
+ 114   4      
+ 115   4              case 0x5F:
+ 116   4                lButton = 0x03;
+C51 COMPILER V9.53.0.0   MAIN                                                              07/02/2018 16:33:04 PAGE 3   
+
+ 117   4                break;
+ 118   4      
+ 119   4              case 0x7D:
+ 120   4                lButton = 0x04;
+ 121   4                break;
+ 122   4      
+ 123   4              default:
+ 124   4                break;
+ 125   4            }
+ 126   3          }
+ 127   2          else
+ 128   2          {
+ 129   3            /* Packet sent by new Keyfob */
+ 130   3      
+ 131   3            if (fixRadioPacket[4u] & (1u << 0u))
+ 132   3            {
+ 133   4              lButton = 0x01;
+ 134   4            }
+ 135   3            else if (fixRadioPacket[4u] & (1u << 1u))
+ 136   3            {
+ 137   4              lButton = 0x02;
+ 138   4            }
+ 139   3            else if (fixRadioPacket[4u] & (1u << 2u))
+ 140   3            {
+ 141   4              lButton = 0x03;
+ 142   4            }
+ 143   3            else if (fixRadioPacket[4u] & (1u << 3u))
+ 144   3            {
+ 145   4              lButton = 0x04;
+ 146   4            }
+ 147   3          }
+ 148   2      
+ 149   2          switch (lButton)
+ 150   2          {
+ 151   3          /* Show the button number in BCD form on LEDs */
+ 152   3          case 0x01:
+ 153   3            vHmi_ChangeLedState(eHmi_Led1_c, eHmi_LedBlinkOnce_c);
+ 154   3            break;
+ 155   3      
+ 156   3          case 0x02:
+ 157   3            vHmi_ChangeLedState(eHmi_Led2_c, eHmi_LedBlinkOnce_c);
+ 158   3            break;
+ 159   3      
+ 160   3          case 0x03:
+ 161   3            vHmi_ChangeLedState(eHmi_Led3_c, eHmi_LedBlinkOnce_c);
+ 162   3            break;
+ 163   3      
+ 164   3          case 0x04:
+ 165   3            vHmi_ChangeLedState(eHmi_Led1_c, eHmi_LedBlinkOnce_c);
+ 166   3            break;
+ 167   3      
+ 168   3          case 0x05:
+ 169   3            vHmi_ChangeLedState(eHmi_Led1_c, eHmi_LedBlinkOnce_c);
+ 170   3            break;
+ 171   3          }
+ 172   2        }
+ 173   1      }
+ 174          
+ 175          /**
+ 176           *  Calls the init functions for the used peripherals/modules
+ 177           *
+ 178           *  @note Should be called at the beginning of the main().
+C51 COMPILER V9.53.0.0   MAIN                                                              07/02/2018 16:33:04 PAGE 4   
+
+ 179           *
+ 180           */
+ 181          void vInitializeHW()
+ 182          {
+ 183   1        // Initialize the MCU peripherals
+ 184   1        vPlf_McuInit();
+ 185   1      
+ 186   1        // Initialize IO ports
+ 187   1        vCio_InitIO();
+ 188   1      
+ 189   1        // Start Timer2 peripheral with overflow interrupt
+ 190   1        vTmr_StartTmr2(eTmr_SysClkDiv12_c, wwTmr_Tmr2Periode.U16, TRUE, bTmr_TxXCLK_00_c);
+ 191   1      
+ 192   1        // Start the push button handler
+ 193   1        vHmi_InitPbHandler();
+ 194   1      
+ 195   1        // Start the Led handler
+ 196   1        vHmi_InitLedHandler();
+ 197   1      
+ 198   1        // Start the Buzzer Handler
+ 199   1        vHmi_InitBuzzer();
+ 200   1      
+ 201   1        // Initialize the Radio
+ 202   1        vRadio_Init();
+ 203   1      
+ 204   1        // Enable configured interrupts
+ 205   1        mIsr_EnableAllIt();
+ 206   1      }
+ 207          
+ 208          /** \fn void MCU_Init(void)
+ 209           *  \brief Initializes ports of the MCU.
+ 210           *
+ 211           *  \return None
+ 212           *
+ 213           *  \note It has to be called from the Initialization section.
+ 214           *  \todo Create description
+ 215           */
+ 216          void vPlf_McuInit(void)
+ 217          {
+ 218   1        U16 wDelay = 0xFFFF;
+ 219   1      
+ 220   1        /* disable F930 watchdog */
+ 221   1        PCA0MD &= (~M_WDTE);
+ 222   1      
+ 223   1        /* Init Internal Precision Oscillator (24.5MHz) */
+ 224   1        SFRPAGE = LEGACY_PAGE;
+ 225   1        FLSCL   = M_BYPASS;
+ 226   1      
+ 227   1        OSCICN |= M_IOSCEN; // p7: Internal Prec. Osc. enabled
+ 228   1        CLKSEL  = 0x00;     // Int. Prec. Osc. selected (24.5MHz)
+ 229   1      
+ 230   1        /* Port IN/OUT init */
+ 231   1        /* P0: 2,3,4,6,7 push-pull */
+ 232   1        /* P1: 0,2,3,6 push-pull */
+ 233   1        // P0MDOUT   = 0xDC;
+ 234   1        // P1MDOUT   = 0x4D;
+ 235   1      
+ 236   1        /* P0: 4,7 push-pull */
+ 237   1        /* P1: 0,2,3,4,5,6 push-pull */
+ 238   1        P0MDOUT   = 0x90;
+ 239   1        P1MDOUT   = 0x7D;
+ 240   1      
+C51 COMPILER V9.53.0.0   MAIN                                                              07/02/2018 16:33:04 PAGE 5   
+
+ 241   1        /* P0: 0,1,2,3,6,7 skipped */
+ 242   1        /* P1: 3,6 skipped */
+ 243   1        // P0SKIP    = 0xCF;
+ 244   1        // P1SKIP    = 0x48;
+ 245   1        
+ 246   1        /* P0: 0,1,2,3,4,7 skipped */
+ 247   1        /* P1: 3,4,5,6 skipped */
+ 248   1        P0SKIP    = 0x9F;
+ 249   1        P1SKIP    = 0x78;
+ 250   1      
+ 251   1        /* Set SMBUS clock speed */
+ 252   1        Set115200bps_24MHZ5;
+ 253   1        /* Start Timer1 */
+ 254   1        TR1 = 1;
+ 255   1        /* Initialize SMBus */
+ 256   1        vSmbus_InitSMBusInterface();
+ 257   1      
+ 258   1        P0MDIN  = 0xFF; // All pin configured as digital port
+ 259   1        P1MDIN  = 0xFF; // All pin configured as digital port
+ 260   1      
+ 261   1        /* Set Drive Strenght */
+ 262   1        SFRPAGE = CONFIG_PAGE;
+ 263   1        P0DRV   = 0x00;
+ 264   1        P1DRV   = 0x00;
+ 265   1      
+ 266   1        SFRPAGE = LEGACY_PAGE;
+ 267   1      
+ 268   1        /* Crossbar configuration */
+ 269   1        XBR0    = M_URT0E | M_SMB0E; //p0: UART enabled on XBAR
+ 270   1        XBR1    = M_SPI1E ; //p6: SPI1 enabled on XBAR
+ 271   1        /*
+ 272   1      #if ((defined SILABS_PLATFORM_RFSTICK) || (defined SILABS_PLATFORM_LCDBB))
+ 273   1        XBR1    |= (1 << BF_PCA0ME_0); //p0: PCA CEX0 enabled on XBAR
+ 274   1      #elif(defined SILABS_MCU_DC_EMIF_F930)
+ 275   1        XBR0    |= M_SPI0E ; //p6: SPI1 enabled on XBAR
+ 276   1      #elif (defined SILABS_MCU_DC_EMIF_F930_STANDALONE)
+ 277   1      
+ 278   1      #elif (defined SILABS_PLATFORM_WMB930)
+ 279   1        XBR1    |= (1 << BF_PCA0ME_0); //p0: PCA CEX0 enabled on XBAR
+ 280   1        XBR0    |= M_SPI0E;
+ 281   1      #elif (defined SILABS_PLATFORM_WMB912)
+ 282   1      
+ 283   1      #else
+ 284   1      #error TO BE WRITTEN FOR OTHER PLARFORMS!
+ 285   1      #endif
+ 286   1      */
+ 287   1        XBR2    = M_XBARE; //p6: XBAR enable
+ 288   1      
+ 289   1        /* latch all inputs to '1' */
+ 290   1        P0      = ~P0MDOUT;
+ 291   1        P1      = ~P1MDOUT;
+ 292   1      
+ 293   1        /* set all output to its default state */
+ 294   1        LED1      = EXTINGUISH;
+ 295   1      #if !(defined SILABS_PLATFORM_WMB912)
+                LED2      = EXTINGUISH;
+                LED3      = EXTINGUISH;
+                LED4      = EXTINGUISH;
+              #endif
+ 300   1        RF_NSEL   = TRUE;
+ 301   1        RF_PWRDN  = FALSE;
+ 302   1      
+C51 COMPILER V9.53.0.0   MAIN                                                              07/02/2018 16:33:04 PAGE 6   
+
+ 303   1        SPI1CFG   = 0x40;
+ 304   1        SPI1CN    = 0x01;
+ 305   1        SPI1CKR   = 0x0B;
+ 306   1      
+ 307   1      
+ 308   1        /* De-select radio SPI */
+ 309   1        vSpi_SetNsel(eSpi_Nsel_RF);
+ 310   1      
+ 311   1      #if ((defined SILABS_LCD_DOG_GLCD) || (defined SILABS_MCU_DC_EMIF_F930) || (defined SILABS_PLATFORM_WMB))
+ 312   1        /* De-select LCD SPI */
+ 313   1        vSpi_SetNsel(eSpi_Nsel_LCD);
+ 314   1      
+ 315   1        LCD_A0    = FALSE;
+ 316   1      #endif
+ 317   1      
+ 318   1        /* Startup delay */
+ 319   1        for (; wDelay; wDelay--)  ;
+ 320   1      
+ 321   1      }
+ 322          
+ 323          #ifdef SDCC
+              /**
+               * \brief External startup function of SDCC.
+               *
+               * It performs operations
+               * prior static and global variable initialization.
+               * Watchdog timer should be disabled this way, otherwise it
+               * can expire before variable initialization is carried out,
+               * and may prevent program execution jumping into main().
+               *
+               * \param None
+               * \return None
+               */
+              void _sdcc_external_startup(void)
+              {
+                PCA0MD &= ~0x40;      // Disable Watchdog timer
+              }
+              #endif
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    402    ----
+   CONSTANT SIZE    =      7    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----       3
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

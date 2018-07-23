@@ -1,0 +1,688 @@
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 1   
+
+
+C51 COMPILER V9.53.0.0, COMPILATION OF MODULE HMI
+OBJECT MODULE PLACED IN hmi.OBJ
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\c51.exe hmi.c DB OE BR SMALL OPTIMIZE(11,SIZE) DEFINE(SILABS_PLATFORM_WMB912) DE
+                    -FINE(SILABS_WMCU_SI106x)
+
+line level    source
+
+   1          /*! @file hmi.c
+   2           * @brief This file contains functions to manage behavior of basic human module interfaces (push-buttons, 
+             -switches, LEDs).
+   3           *
+   4           * @b COPYRIGHT
+   5           * @n Silicon Laboratories Confidential
+   6           * @n Copyright 2012 Silicon Laboratories, Inc.
+   7           * @n http://www.silabs.com
+   8           */
+   9          
+  10          #include "..\bsp.h"
+  11          
+  12          
+  13          /*------------------------------------------------------------------------*/
+  14          /*                          Global variables                              */
+  15          /*------------------------------------------------------------------------*/
+  16          
+  17          #ifdef SILABS_PLATFORM_COMPONENT_PB
+  18          SEGMENT_VARIABLE(rHmi_PbData, tHmi_PbData, SEG_XDATA) = { eHmi_PbStandBy_c, }; /**< Instance of push-butto
+             -n data structure */
+  19          SEGMENT_VARIABLE(aqHmi_PbStates[], eHmi_PbStates, SEG_XDATA)= {eHmi_PbNo_c, eHmi_Pb1_c, eHmi_Pb2_c, eHmi_P
+             -b3_c, eHmi_Pb4_c}; /**< Array of instances of push-button definitions */
+  20          #endif
+  21          
+  22          #ifdef SILABS_PLATFORM_COMPONENT_LED
+  23          SEGMENT_VARIABLE(arHmi_LedData[bHmi_NumOfLeds_c], tHmi_LedData, SEG_XDATA) = {{0,},};  /**< Array of insta
+             -nces of Led data structure */
+  24          
+  25            #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+  26            SEGMENT_VARIABLE(wHmi_LedMainCnt, U16, SEG_XDATA) = 0; /**< Main time counter of Led handler */
+  27            #endif
+  28          SEGMENT_VARIABLE(aqHmi_Leds[], eHmi_Leds, SEG_XDATA)= {eHmi_NoLed_c, eHmi_Led1_c, eHmi_Led2_c, eHmi_Led3_c
+             -, eHmi_Led4_c}; /**< Array of instances of Led definitions */
+  29          #endif
+  30          
+  31          #ifdef SILABS_PLATFORM_COMPONENT_BUZZER
+  32          SEGMENT_VARIABLE(rHmi_BuzzData, tHmi_BuzzData, SEG_XDATA); /**< Instance of Buzzer data structure */
+  33            #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+  34            SEGMENT_VARIABLE(wHmi_BuzzMainCnt, U16, SEG_XDATA) = 0;     /**< Main time counter of Buzzer handler */
+  35            #endif
+  36          #endif
+  37          
+  38          #ifdef SILABS_PLATFORM_COMPONENT_SWITCH
+              SEGMENT_VARIABLE(bHmi_SwStateHolder, U8, SEG_XDATA) = 0; /**< Holds the actual state of the switches */
+              #endif
+  41          
+  42          
+  43          /*------------------------------------------------------------------------*/
+  44          /*                          Function implementations                      */
+  45          /*------------------------------------------------------------------------*/
+  46          
+  47          #ifdef SILABS_PLATFORM_COMPONENT_LED
+  48          /*!
+  49           * This function is used to initialize the Led handler.
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 2   
+
+  50           *
+  51           * @return  None.
+  52           *
+  53           * @note It has to be called from the initialization section.
+  54           */
+  55          void vHmi_InitLedHandler(void)
+  56          {
+  57   1        /*! NOTE: Re-initialization of LED Handler supported by the extended HMI driver */
+  58   1      
+  59   1      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+  60   1        SEGMENT_VARIABLE(bLedCnt, U8 , SEG_DATA);
+  61   1      
+  62   1        for (bLedCnt = 1; bLedCnt <= bHmi_NumOfLeds_c; bLedCnt++)
+  63   1        {
+  64   2          arHmi_LedData[bLedCnt-1].gLedIsOn = FALSE;
+  65   2          arHmi_LedData[bLedCnt-1].qLedState = eHmi_LedOff_c;
+  66   2          arHmi_LedData[bLedCnt-1].wLedBlinkCnt = 0;
+  67   2        }
+  68   1      #endif
+  69   1      }
+  70          
+  71          /*!
+  72           * This function is used to change state of selected Led.
+  73           *
+  74           * @param[in] qiLed Led to change its state.
+  75           * @param[in] qiLedState New state of qiLed.
+  76           *
+  77           * @return  None.
+  78           */
+  79          void vHmi_ChangeLedState(eHmi_Leds qiLed, eHmi_LedStates qiLedState)
+  80          {
+  81   1        arHmi_LedData[qiLed-1].qLedState = qiLedState;
+  82   1      }
+  83          
+  84          #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+  85          /*!
+  86           * This function is used to change state of all Leds.
+  87           *
+  88           * @param[in] qiLedState New state of all the Leds.
+  89           *
+  90           * @return  None.
+  91           */
+  92          void vHmi_ChangeAllLedState(eHmi_LedStates qiLedState)
+  93          {
+  94   1        SEGMENT_VARIABLE(bLedCnt, U8 , SEG_DATA);
+  95   1      
+  96   1        for (bLedCnt = 1; bLedCnt <= bHmi_NumOfLeds_c; bLedCnt++)
+  97   1        {
+  98   2          arHmi_LedData[bLedCnt-1].qLedState = qiLedState;
+  99   2        }
+ 100   1      }
+ 101          
+ 102          /*!
+ 103           * This function is used to force all Leds to off immediately.
+ 104           *
+ 105           * @return  None.
+ 106           */
+ 107          void vHmi_ClearAllLeds(void)
+ 108          {
+ 109   1        SEGMENT_VARIABLE(bLedCnt, U8 , SEG_DATA);
+ 110   1      
+ 111   1        for (bLedCnt = 1; bLedCnt <= bHmi_NumOfLeds_c; bLedCnt++)
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 3   
+
+ 112   1        {
+ 113   2          vCio_ClearLed(bLedCnt);
+ 114   2          arHmi_LedData[bLedCnt-1].gLedIsOn = FALSE;
+ 115   2          arHmi_LedData[bLedCnt-1].qLedState = eHmi_LedStdBy_c;
+ 116   2        }
+ 117   1      }
+ 118          #endif
+ 119          
+ 120          /*!
+ 121           * This function is used to handle Led management.
+ 122           *
+ 123           * @return  None.
+ 124           */
+ 125          void vHmi_LedHandler(void)
+ 126          {
+ 127   1      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 128   1        BIT bLedChngReq = FALSE;
+ 129   1      #else
+                static
+              #endif
+ 132   1        SEGMENT_VARIABLE(bLedCnt, U8 , SEG_DATA) = 0u;
+ 133   1      
+ 134   1      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 135   1        wHmi_LedMainCnt++;
+ 136   1      
+ 137   1        for (bLedCnt = 1; bLedCnt <= bHmi_NumOfLeds_c; bLedCnt++)
+ 138   1      #else
+                if (++bLedCnt > bHmi_NumOfLeds_c) bLedCnt = 1u;
+              #endif
+ 141   1        {
+ 142   2          switch (arHmi_LedData[bLedCnt-1].qLedState)
+ 143   2          {
+ 144   3            case eHmi_LedOff_c:
+ 145   3              vCio_ClearLed(bLedCnt);
+ 146   3              arHmi_LedData[bLedCnt-1].gLedIsOn = FALSE;
+ 147   3              arHmi_LedData[bLedCnt-1].qLedState = eHmi_LedStdBy_c;
+ 148   3              break;
+ 149   3      
+ 150   3            case eHmi_LedOn_c:
+ 151   3              vCio_SetLed(bLedCnt);
+ 152   3              arHmi_LedData[bLedCnt-1].gLedIsOn = TRUE;
+ 153   3              arHmi_LedData[bLedCnt-1].qLedState = eHmi_LedStdBy_c;
+ 154   3              break;
+ 155   3      
+ 156   3            case eHmi_LedStdBy_c:
+ 157   3              break;
+ 158   3      
+ 159   3      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 160   3            case eHmi_LedToggle_c:
+ 161   3                vCio_ToggleLed(bLedCnt);
+ 162   3                arHmi_LedData[bLedCnt-1].gLedIsOn = \
+ 163   3                      !arHmi_LedData[bLedCnt-1].gLedIsOn;
+ 164   3                arHmi_LedData[bLedCnt-1].qLedState = eHmi_LedStdBy_c;
+ 165   3              break;
+ 166   3      
+ 167   3            case eHmi_LedBlink2Hz_c:
+ 168   3              if ((wHmi_LedMainCnt == wTmr_2HzCntMax_c) ||
+ 169   3                  (wHmi_LedMainCnt == wTmr_2HzCntMax_c + wTmr_1HzCntMax_c)
+ 170   3              )
+ 171   3              {
+ 172   4                bLedChngReq = TRUE;
+ 173   4              }
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 4   
+
+ 174   3            case eHmi_LedBlink1Hz_c:
+ 175   3              if (wHmi_LedMainCnt == wTmr_1HzCntMax_c)
+ 176   3              {
+ 177   4                bLedChngReq = TRUE;
+ 178   4              }
+ 179   3            case eHmi_LedBlinkHalfHz_c:
+ 180   3              if (wHmi_LedMainCnt == wTmr_0Hz5CntMax_c)
+ 181   3              {
+ 182   4                bLedChngReq = TRUE;
+ 183   4              }
+ 184   3              break;
+ 185   3      #endif
+ 186   3      
+ 187   3            case eHmi_LedBlinkOnce_c:
+ 188   3              vCio_SetLed(bLedCnt);
+ 189   3              arHmi_LedData[bLedCnt-1].gLedIsOn = TRUE;
+ 190   3              arHmi_LedData[bLedCnt-1].wLedBlinkCnt = 0;
+ 191   3              arHmi_LedData[bLedCnt-1].qLedState = eHmi_LedBlinkWait_c;
+ 192   3            case eHmi_LedBlinkWait_c:
+ 193   3              if ( arHmi_LedData[bLedCnt-1].wLedBlinkCnt++ > (wTmr_2HzCntMax_c / (2.0
+ 194   3      #ifndef HMI_DRIVER_EXTENDED_SUPPORT
+                          * 4u
+              #endif
+ 197   3              )) )
+ 198   3              {
+ 199   4                arHmi_LedData[bLedCnt-1].qLedState = eHmi_LedOff_c;
+ 200   4              }
+ 201   3              break;
+ 202   3      
+ 203   3            default:
+ 204   3              break;
+ 205   3          }
+ 206   2      
+ 207   2        #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 208   2          if (bLedChngReq)
+ 209   2          {
+ 210   3            if (arHmi_LedData[bLedCnt-1].gLedIsOn)
+ 211   3            {
+ 212   4              vCio_ClearLed(bLedCnt);
+ 213   4              arHmi_LedData[bLedCnt-1].gLedIsOn = FALSE;
+ 214   4            }
+ 215   3            else
+ 216   3            {
+ 217   4              vCio_SetLed(bLedCnt);
+ 218   4              arHmi_LedData[bLedCnt-1].gLedIsOn = TRUE;
+ 219   4            }
+ 220   3            bLedChngReq = FALSE;
+ 221   3          }
+ 222   2        #endif
+ 223   2        }
+ 224   1        #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 225   1        if (wHmi_LedMainCnt == wTmr_0Hz5CntMax_c)
+ 226   1        {
+ 227   2          wHmi_LedMainCnt = 0;
+ 228   2        }
+ 229   1        #endif
+ 230   1      }
+ 231          #endif
+ 232          
+ 233          #ifdef SILABS_PLATFORM_COMPONENT_PB
+ 234          /*!
+ 235           * This function is used to initialize push-button handler.
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 5   
+
+ 236           *
+ 237           * @return  None.
+ 238           *
+ 239           * @note It has to be called from the initialization section.
+ 240           */
+ 241          void vHmi_InitPbHandler(void)
+ 242          {
+ 243   1        /*! NOTE: Re-initialization of LED Handler supported by the extended HMI driver */
+ 244   1      
+ 245   1      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 246   1        rHmi_PbData.qPbHandlerState = eHmi_PbStandBy_c;
+ 247   1        rHmi_PbData.wPbPushTime     = 0;
+ 248   1        rHmi_PbData.bPbPushTrack    = eHmi_PbNo_c;
+ 249   1        rHmi_PbData.bPbPushTrackAct = eHmi_PbNo_c;
+ 250   1        rHmi_PbData.bPbWaitTime     = 0;
+ 251   1      #endif
+ 252   1      }
+ 253          
+ 254          /*!
+ 255           * This function is used to check if any of the push-buttons is pushed.
+ 256           *
+ 257           * @param[out] *boPbPushTrack Read value of pushed button.
+ 258           * @param[out] *woPbPushTime Push time of pushed button.
+ 259           *
+ 260           * @return  Pushed state of push-buttons.
+ 261           */
+ 262          BIT gHmi_PbIsPushed(U8 *boPbPushTrack, U16 *woPbPushTime)
+ 263          {
+ 264   1        if (rHmi_PbData.qPbHandlerState == eHmi_PbPushed_c)
+ 265   1        {
+ 266   2          *boPbPushTrack  = rHmi_PbData.bPbPushTrack;
+ 267   2          *woPbPushTime   = rHmi_PbData.wPbPushTime;
+ 268   2          return TRUE;
+ 269   2        }
+ 270   1        else
+ 271   1        {
+ 272   2          *boPbPushTrack  = eHmi_PbNo_c;
+ 273   2          *woPbPushTime   = 0;
+ 274   2          return FALSE;
+ 275   2        }
+ 276   1      }
+ 277          
+ 278          #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 279          /*!
+ 280           * This function is used to check if there is unhandled push-buttons event.
+ 281           *
+ 282           * @return  True if there is unhandled push-button event.
+ 283           */
+ 284          BIT gHmi_IsPbUnHandled(void)
+ 285          {
+ 286   1        if (rHmi_PbData.bPbPushTrackLast > eHmi_PbNo_c)
+ 287   1        {
+ 288   2          return TRUE;
+ 289   2        }
+ 290   1        else
+ 291   1        {
+ 292   2          return FALSE;
+ 293   2        }
+ 294   1      }
+ 295          
+ 296          /*!
+ 297           * This function is used to read last pushed button(s), push track holder is erased if button(s) was alrea
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 6   
+
+             -dy released.
+ 298           *
+ 299           * @param[out] *woPbPushTime Push time of pushed button.
+ 300          
+ 301           * @return  Push track holder of last pushed button(s).
+ 302           */
+ 303          U8 bHmi_PbGetLastButton(U16 *woPbPushTime)
+ 304          {
+ 305   1        SEGMENT_VARIABLE(bPbPushTrackTemp, U8 , SEG_DATA) = rHmi_PbData.bPbPushTrackLast;
+ 306   1      
+ 307   1        *woPbPushTime = rHmi_PbData.wPbPushTimeLast;
+ 308   1      
+ 309   1        if (rHmi_PbData.bPbPushTrackLast > eHmi_PbNo_c)
+ 310   1        {
+ 311   2          rHmi_PbData.bPbPushTrackLast = eHmi_PbNo_c;
+ 312   2          rHmi_PbData.wPbPushTimeLast = 0;
+ 313   2        }
+ 314   1      
+ 315   1        return bPbPushTrackTemp;
+ 316   1      }
+ 317          #endif
+ 318          
+ 319          /*!
+ 320           * This function is used to handle push-button management.
+ 321           *
+ 322           * @return  None.
+ 323           */
+ 324          void vHmi_PbHandler(void)
+ 325          {
+ 326   1      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 327   1        static
+ 328   1      #endif
+ 329   1        SEGMENT_VARIABLE(bButtonCnt, U8 , SEG_DATA) = 0u;
+ 330   1        SEGMENT_VARIABLE(bTemp, U8 , SEG_DATA);
+ 331   1      
+ 332   1      #ifdef SILABS_PLATFORM_WMB
+ 333   1        static SEGMENT_VARIABLE(lInvokeCnt, U8, SEG_XDATA)  = 0u;
+ 334   1      #endif
+ 335   1      
+ 336   1      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 337   1        if (rHmi_PbData.qPbHandlerState > eHmi_PbNoRun_c)
+ 338   1      #endif
+ 339   1        {
+ 340   2      
+ 341   2      #ifdef SILABS_PLATFORM_WMB
+ 342   2          if (++lInvokeCnt == 0u)
+ 343   2      #endif
+ 344   2          {
+ 345   3            rHmi_PbData.bPbPushTrackAct = eHmi_PbNo_c;
+ 346   3      
+ 347   3            for (bButtonCnt = 1; bButtonCnt <= bHmi_NumOfPbs_c; bButtonCnt++)       // Store state of the button
+             -s
+ 348   3            {
+ 349   4              bTemp = !gCio_GetPB(bButtonCnt);
+ 350   4              rHmi_PbData.bPbPushTrackAct += bTemp<<(bButtonCnt-1);
+ 351   4            }
+ 352   3          }
+ 353   2      
+ 354   2          switch (rHmi_PbData.qPbHandlerState)
+ 355   2          {
+ 356   3            case eHmi_PbStandByWaitAllReleased_c:
+ 357   3              if (rHmi_PbData.bPbPushTrackAct == eHmi_PbNo_c)
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 7   
+
+ 358   3              {
+ 359   4                rHmi_PbData.qPbHandlerState = eHmi_PbStandBy_c;
+ 360   4              }
+ 361   3              break;
+ 362   3      
+ 363   3            case eHmi_PbStandBy_c:
+ 364   3              if (rHmi_PbData.bPbPushTrackAct > eHmi_PbNo_c)
+ 365   3              {
+ 366   4                rHmi_PbData.qPbHandlerState = eHmi_PbStateChanged_c;
+ 367   4              }
+ 368   3              break;
+ 369   3      
+ 370   3            case eHmi_PbStateChanged_c:
+ 371   3              rHmi_PbData.wPbPushTime = 0;
+ 372   3              rHmi_PbData.bPbPushTrack = rHmi_PbData.bPbPushTrackAct;
+ 373   3      
+ 374   3              if (rHmi_PbData.bPbPushTrackAct == eHmi_PbNo_c)
+ 375   3              {
+ 376   4                rHmi_PbData.qPbHandlerState = eHmi_PbStandBy_c;
+ 377   4              }
+ 378   3              else
+ 379   3              {
+ 380   4                rHmi_PbData.qPbHandlerState = eHmi_PbDebounceWait_c;
+ 381   4              }
+ 382   3              break;
+ 383   3      
+ 384   3            case eHmi_PbDebounceWait_c:
+ 385   3              if (rHmi_PbData.bPbWaitTime++ > bHmi_PbDebounceWaitTime_c)
+ 386   3              {
+ 387   4                rHmi_PbData.bPbWaitTime = 0;
+ 388   4                rHmi_PbData.wPbPushTime = 0;
+ 389   4                rHmi_PbData.qPbHandlerState = eHmi_PbPushed_c;
+ 390   4              }
+ 391   3              break;
+ 392   3      
+ 393   3            case eHmi_PbPushed_c:
+ 394   3              /* If button released, or one released but more were pushed store the state*/
+ 395   3              if (rHmi_PbData.bPbPushTrackAct < rHmi_PbData.bPbPushTrack)
+ 396   3              {
+ 397   4                rHmi_PbData.qPbHandlerState = eHmi_PbReleaseWait_c;
+ 398   4              }
+ 399   3              /* If one more button is pushed goto change state */
+ 400   3              else if (rHmi_PbData.bPbPushTrackAct > rHmi_PbData.bPbPushTrack)
+ 401   3              {
+ 402   4                rHmi_PbData.qPbHandlerState = eHmi_PbStateChanged_c;
+ 403   4              }
+ 404   3              /* Increase counter if no change in button states */
+ 405   3              else
+ 406   3              {
+ 407   4                rHmi_PbData.wPbPushTime++;
+ 408   4              }
+ 409   3              break;
+ 410   3      
+ 411   3            case eHmi_PbReleaseWait_c:
+ 412   3              if (rHmi_PbData.bPbWaitTime++ > bHmi_PbDebounceWaitTime_c)
+ 413   3              {
+ 414   4                rHmi_PbData.bPbWaitTime = 0;
+ 415   4                rHmi_PbData.qPbHandlerState   = eHmi_PbStandByWaitAllReleased_c;
+ 416   4                rHmi_PbData.bPbPushTrackLast  = rHmi_PbData.bPbPushTrack;
+ 417   4                rHmi_PbData.wPbPushTimeLast   = rHmi_PbData.wPbPushTime;
+ 418   4              }
+ 419   3              break;
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 8   
+
+ 420   3          }
+ 421   2        }
+ 422   1      }
+ 423          #endif
+ 424          
+ 425          #if ((defined SILABS_PLATFORM_COMPONENT_LED) && (defined SILABS_PLATFORM_COMPONENT_PB))
+ 426            #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 427            /*!
+ 428             * This function is used to show the actual state of the push-buttons on the Leds.
+ 429             *
+ 430             * @return  None.
+ 431             */
+ 432            void vHmi_ShowPbOnLeds(void)
+ 433            {
+ 434   1          SEGMENT_VARIABLE(boPbPushTrack, U8 , SEG_DATA);
+ 435   1          SEGMENT_VARIABLE(woPbPushTime, U16 , SEG_DATA);
+ 436   1          SEGMENT_VARIABLE(bPbLedCnt, U8 , SEG_DATA);
+ 437   1      
+ 438   1          gHmi_PbIsPushed(&boPbPushTrack, &woPbPushTime);
+ 439   1      
+ 440   1          for (bPbLedCnt = 1; bPbLedCnt <= 4; bPbLedCnt++)
+ 441   1          {
+ 442   2            if (boPbPushTrack & aqHmi_PbStates[bPbLedCnt])
+ 443   2            {
+ 444   3              vHmi_ChangeLedState(aqHmi_Leds[bPbLedCnt], eHmi_LedOn_c);
+ 445   3            }
+ 446   2            else
+ 447   2            {
+ 448   3              vHmi_ChangeLedState(aqHmi_Leds[bPbLedCnt], eHmi_LedOff_c);
+ 449   3            }
+ 450   2          }
+ 451   1        }
+ 452            #endif
+ 453          #endif
+ 454          
+ 455          #ifdef SILABS_PLATFORM_COMPONENT_SWITCH
+              /*!
+               * This function is used to handle switch state change.
+               *
+               * @return  True if state of switches has changed.
+               */
+              BIT gHmi_SwStateHandler(void)
+              {
+                SEGMENT_VARIABLE(bSwStateHolderAct, U8, SEG_DATA) = 0; /**< Holds the actual state of the switches */
+              
+                bSwStateHolderAct |= (SW1_A) ? (eHmi_NoSw_c) : (eHmi_Sw1_A_c);
+                bSwStateHolderAct |= (SW1_B) ? (eHmi_NoSw_c) : (eHmi_Sw1_B_c);
+                bSwStateHolderAct |= (SW1_C) ? (eHmi_NoSw_c) : (eHmi_Sw1_C_c);
+                bSwStateHolderAct |= (SW1_D) ? (eHmi_NoSw_c) : (eHmi_Sw1_D_c);
+              
+                if (bSwStateHolderAct == bHmi_SwStateHolder)
+                {
+                  return FALSE;
+                }
+                else
+                {
+                  bHmi_SwStateHolder = bSwStateHolderAct;
+                  return TRUE;
+                }
+              
+              }
+              
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 9   
+
+              U8 bHmi_GetSwState(void)
+              {
+                return bHmi_SwStateHolder;
+              }
+              #endif
+ 487          
+ 488          #ifdef SILABS_PLATFORM_COMPONENT_BUZZER
+ 489          /*!
+ 490           * This function is used to initialize the buzzer operation.
+ 491           *
+ 492           * @return  None.
+ 493           *
+ 494           * @note It has to be called from the initialization section.
+ 495           */
+ 496          void vHmi_InitBuzzer(void)
+ 497          {
+ 498   1      
+ 499   1        //  vPca_InitPcaTmr(bPca_PcaCps_000_c, FALSE, bPca_PwmClsel_01_c);  //4kHz
+ 500   1        //  vPca_InitPcaTmr(bPca_PcaCps_000_c, FALSE, bPca_PwmClsel_00_c);  //8kHz
+ 501   1        //  vPca_InitPcaTmr(bPca_PcaCps_000_c, FALSE, bPca_PwmClsel_10_c);  //2kHz
+ 502   1        vPca_InitPcaTmr(bPca_PcaCps_000_c, FALSE, bPca_PwmClsel_11_c);  //1kHz
+ 503   1        //  mPca_EnablePcaTmrCofIt();
+ 504   1      
+ 505   1        mPca_DisableAllInCpmN(0);
+ 506   1        //  mPca_EnablePwmN(0);
+ 507   1      
+ 508   1        mPca_SelectAutoReloadReg();
+ 509   1        //  mPca_SetAutoReloadRegN(0, 0x0040); //90% @ 4kHz
+ 510   1        //  mPca_SetAutoReloadRegN(0, 0x0100); //50% @ 4kHz
+ 511   1        mPca_SetAutoReloadRegN(0, 0x0400); //50% @ 1kHz
+ 512   1        //  mPca_SetAutoReloadRegN(0, 0x01BF);  //10% @ 4kHz
+ 513   1      
+ 514   1        mPca_EnablePcaTmr();
+ 515   1      
+ 516   1        rHmi_BuzzData.gBuzzIsOn = FALSE;
+ 517   1        rHmi_BuzzData.qBuzzState = eHmi_BuzzOff_c;
+ 518   1        rHmi_BuzzData.wBuzzCnt = 0;
+ 519   1      
+ 520   1      }
+ 521          
+ 522          /*!
+ 523           * This function is used to change the state the buzzer.
+ 524           *
+ 525           * @param[in] qiBuzzState New state of the buzzer.
+ 526           *
+ 527           * @return  None.
+ 528           */
+ 529          void vHmi_ChangeBuzzState(eHmi_BuzzStates qiBuzzState)
+ 530          {
+ 531   1      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 532   1        if (rHmi_BuzzData.qBuzzNextState != qiBuzzState)
+ 533   1      #endif
+ 534   1        {
+ 535   2          rHmi_BuzzData.qBuzzState = rHmi_BuzzData.qBuzzNextState = qiBuzzState;
+ 536   2        }
+ 537   1      }
+ 538          
+ 539          /*!
+ 540           * This function is used to handle buzzer management.
+ 541           *
+ 542           * @return  None.
+ 543           */
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 10  
+
+ 544          void vHmi_BuzzHandler(void)
+ 545          {
+ 546   1        BIT bBuzzChngReq = FALSE;
+ 547   1      
+ 548   1      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 549   1        wHmi_BuzzMainCnt++;
+ 550   1      #endif
+ 551   1      
+ 552   1        switch (rHmi_BuzzData.qBuzzState)
+ 553   1        {
+ 554   2          case eHmi_BuzzOff_c:
+ 555   2            mPca_DisablePwmN(0);
+ 556   2            rHmi_BuzzData.gBuzzIsOn = FALSE;
+ 557   2            rHmi_BuzzData.qBuzzState = eHmi_BuzzStdBy_c;
+ 558   2            break;
+ 559   2      
+ 560   2      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 561   2          case eHmi_BuzzOn_c:
+ 562   2            mPca_EnablePwmN(0);
+ 563   2            rHmi_BuzzData.gBuzzIsOn = TRUE;
+ 564   2            rHmi_BuzzData.qBuzzState = eHmi_BuzzStdBy_c;
+ 565   2            break;
+ 566   2      
+ 567   2          case eHmi_BuzzStdBy_c:
+ 568   2            break;
+ 569   2      
+ 570   2          case eHmi_Buzz2Hz_c:
+ 571   2            if ((wHmi_BuzzMainCnt == wTmr_2HzCntMax_c) ||
+ 572   2                (wHmi_BuzzMainCnt == wTmr_2HzCntMax_c + wTmr_1HzCntMax_c) ||
+ 573   2                (wHmi_BuzzMainCnt == wTmr_2HzCntMax_c + wTmr_0Hz5CntMax_c) ||
+ 574   2                (wHmi_BuzzMainCnt == wTmr_2HzCntMax_c + wTmr_0Hz5CntMax_c + wTmr_1HzCntMax_c)
+ 575   2            )
+ 576   2            {
+ 577   3              rHmi_BuzzData.qBuzzState = eHmi_BuzzOnceAndCont_c;
+ 578   3            }
+ 579   2          case eHmi_Buzz1Hz_c:
+ 580   2            if ((wHmi_BuzzMainCnt == wTmr_1HzCntMax_c) ||
+ 581   2                (wHmi_BuzzMainCnt == wTmr_1HzCntMax_c + wTmr_0Hz5CntMax_c)
+ 582   2            )
+ 583   2            {
+ 584   3              rHmi_BuzzData.qBuzzState = eHmi_BuzzOnceAndCont_c;
+ 585   3            }
+ 586   2          case eHmi_Buzz0Hz5_c:
+ 587   2            if (wHmi_BuzzMainCnt == wTmr_0Hz5CntMax_c)
+ 588   2            {
+ 589   3              rHmi_BuzzData.qBuzzState = eHmi_BuzzOnceAndCont_c;
+ 590   3            }
+ 591   2          case eHmi_Buzz0Hz25_c:
+ 592   2            if (wHmi_BuzzMainCnt == wTmr_0Hz25CntMax_c)
+ 593   2            {
+ 594   3              rHmi_BuzzData.qBuzzState = eHmi_BuzzOnceAndCont_c;
+ 595   3            }
+ 596   2            break;
+ 597   2      
+ 598   2          case eHmi_BuzzOnceAndCont_c:
+ 599   2            mPca_EnablePwmN(0);
+ 600   2            mPca_SetAutoReloadRegN(0, 0x0100); //50% @ 4kHz
+ 601   2            rHmi_BuzzData.gBuzzIsOn = TRUE;
+ 602   2            rHmi_BuzzData.wBuzzCnt = 0;
+ 603   2            rHmi_BuzzData.qBuzzState = eHmi_BuzzWait_c;
+ 604   2            break;
+ 605   2      #endif
+C51 COMPILER V9.53.0.0   HMI                                                               07/02/2018 16:33:04 PAGE 11  
+
+ 606   2          case eHmi_BuzzOnce_c:
+ 607   2            mPca_EnablePwmN(0);
+ 608   2            //mPca_SetAutoReloadRegN(0, 0x0100); //50% @ 2kHz
+ 609   2            mPca_SetAutoReloadRegN(0, 0x0400); //50% @ 1kHz
+ 610   2            rHmi_BuzzData.gBuzzIsOn = TRUE;
+ 611   2            rHmi_BuzzData.wBuzzCnt = 0;
+ 612   2            rHmi_BuzzData.qBuzzNextState = eHmi_BuzzOff_c;
+ 613   2            rHmi_BuzzData.qBuzzState = eHmi_BuzzWait_c;
+ 614   2          case eHmi_BuzzWait_c:
+ 615   2            if (rHmi_BuzzData.wBuzzCnt++ > (wTmr_8HzCntMax_c))
+ 616   2            {
+ 617   3              mPca_DisablePwmN(0);
+ 618   3              rHmi_BuzzData.gBuzzIsOn = FALSE;
+ 619   3              rHmi_BuzzData.qBuzzState = rHmi_BuzzData.qBuzzNextState;
+ 620   3            }
+ 621   2            break;
+ 622   2      
+ 623   2          default:
+ 624   2            break;
+ 625   2        }
+ 626   1      
+ 627   1      #ifdef HMI_DRIVER_EXTENDED_SUPPORT
+ 628   1        if (wHmi_BuzzMainCnt == wTmr_0Hz25CntMax_c)
+ 629   1        {
+ 630   2          wHmi_BuzzMainCnt = 0;
+ 631   2        }
+ 632   1      #endif
+ 633   1      }
+ 634          #endif
+ 635          
+ 636          
+ 637          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1261    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     45    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      1      11
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       2
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

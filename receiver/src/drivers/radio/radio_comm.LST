@@ -1,0 +1,276 @@
+C51 COMPILER V9.53.0.0   RADIO_COMM                                                        07/02/2018 16:33:05 PAGE 1   
+
+
+C51 COMPILER V9.53.0.0, COMPILATION OF MODULE RADIO_COMM
+OBJECT MODULE PLACED IN radio_comm.OBJ
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\c51.exe radio_comm.c DB OE BR SMALL OPTIMIZE(11,SIZE) DEFINE(SILABS_PLATFORM_WMB
+                    -912) DEFINE(SILABS_WMCU_SI106x)
+
+line level    source
+
+   1          /*!
+   2           * File:
+   3           *  radio_comm.h
+   4           *
+   5           * Description:
+   6           *  This file contains the RADIO communication layer.
+   7           *
+   8           * Silicon Laboratories Confidential
+   9           * Copyright 2012 Silicon Laboratories, Inc.
+  10           */
+  11          
+  12                          /* ======================================= *
+  13                           *              I N C L U D E              *
+  14                           * ======================================= */
+  15          
+  16          #include "..\..\bsp.h"
+  17          
+  18                          /* ======================================= *
+  19                           *          D E F I N I T I O N S          *
+  20                           * ======================================= */
+  21          
+  22                          /* ======================================= *
+  23                           *     G L O B A L   V A R I A B L E S     *
+  24                           * ======================================= */
+  25          
+  26          #if (defined SILABS_RADIO_SI446X) || (defined SILABS_RADIO_SI4455)
+  27          BIT ctsWentHigh = 0;
+  28          #endif
+  29          
+  30          
+  31                          /* ======================================= *
+  32                           *      L O C A L   F U N C T I O N S      *
+  33                           * ======================================= */
+  34          
+  35                          /* ======================================= *
+  36                           *     P U B L I C   F U N C T I O N S     *
+  37                           * ======================================= */
+  38          
+  39          #if (defined SILABS_RADIO_SI446X) || (defined SILABS_RADIO_SI4455)
+  40          
+  41          /*!
+  42           * Gets a command response from the radio chip
+  43           *
+  44           * @param byteCount     Number of bytes to get from the radio chip
+  45           * @param pData         Pointer to where to put the data
+  46           *
+  47           * @return CTS value
+  48           */
+  49          U8 radio_comm_GetResp(U8 byteCount, U8* pData)
+  50          {
+  51   1        SEGMENT_VARIABLE(ctsVal = 0u, U8, SEG_DATA);
+  52   1        SEGMENT_VARIABLE(errCnt = RADIO_CTS_TIMEOUT, U16, SEG_DATA);
+  53   1      
+  54   1        while (errCnt != 0)      //wait until radio IC is ready with the data
+C51 COMPILER V9.53.0.0   RADIO_COMM                                                        07/02/2018 16:33:05 PAGE 2   
+
+  55   1        {
+  56   2          radio_hal_ClearNsel();
+  57   2          radio_hal_SpiWriteByte(0x44);    //read CMD buffer
+  58   2          ctsVal = radio_hal_SpiReadByte();
+  59   2          if (ctsVal == 0xFF)
+  60   2          {
+  61   3            if (byteCount)
+  62   3            {
+  63   4              radio_hal_SpiReadData(byteCount, pData);
+  64   4            }
+  65   3            radio_hal_SetNsel();
+  66   3            break;
+  67   3          }
+  68   2          radio_hal_SetNsel();
+  69   2          errCnt--;
+  70   2        }
+  71   1      
+  72   1        if (errCnt == 0)
+  73   1        {
+  74   2          while(1)
+  75   2          {
+  76   3            /* ERROR!!!!  CTS should never take this long. */
+  77   3            #ifdef RADIO_COMM_ERROR_CALLBACK
+                      RADIO_COMM_ERROR_CALLBACK();
+                    #endif
+  80   3          }
+  81   2        }
+  82   1      
+  83   1        if (ctsVal == 0xFF)
+  84   1        {
+  85   2          ctsWentHigh = 1;
+  86   2        }
+  87   1      
+  88   1        return ctsVal;
+  89   1      }
+  90          
+  91          /*!
+  92           * Sends a command to the radio chip
+  93           *
+  94           * @param byteCount     Number of bytes in the command to send to the radio device
+  95           * @param pData         Pointer to the command to send.
+  96           */
+  97          void radio_comm_SendCmd(U8 byteCount, U8* pData)
+  98          {
+  99   1          while (!ctsWentHigh)
+ 100   1          {
+ 101   2              radio_comm_PollCTS();
+ 102   2          }
+ 103   1          radio_hal_ClearNsel();
+ 104   1          radio_hal_SpiWriteData(byteCount, pData);
+ 105   1          radio_hal_SetNsel();
+ 106   1          ctsWentHigh = 0;
+ 107   1      }
+ 108          
+ 109          /*!
+ 110           * Gets a command response from the radio chip
+ 111           *
+ 112           * @param cmd           Command ID
+ 113           * @param pollCts       Set to poll CTS
+ 114           * @param byteCount     Number of bytes to get from the radio chip.
+ 115           * @param pData         Pointer to where to put the data.
+ 116           */
+C51 COMPILER V9.53.0.0   RADIO_COMM                                                        07/02/2018 16:33:05 PAGE 3   
+
+ 117          void radio_comm_ReadData(U8 cmd, BIT pollCts, U8 byteCount, U8* pData)
+ 118          {
+ 119   1          if(pollCts)
+ 120   1          {
+ 121   2              while(!ctsWentHigh)
+ 122   2              {
+ 123   3                  radio_comm_PollCTS();
+ 124   3              }
+ 125   2          }
+ 126   1          radio_hal_ClearNsel();
+ 127   1          radio_hal_SpiWriteByte(cmd);
+ 128   1          radio_hal_SpiReadData(byteCount, pData);
+ 129   1          radio_hal_SetNsel();
+ 130   1          ctsWentHigh = 0;
+ 131   1      }
+ 132          
+ 133          
+ 134          /*!
+ 135           * Gets a command response from the radio chip
+ 136           *
+ 137           * @param cmd           Command ID
+ 138           * @param pollCts       Set to poll CTS
+ 139           * @param byteCount     Number of bytes to get from the radio chip
+ 140           * @param pData         Pointer to where to put the data
+ 141           */
+ 142          void radio_comm_WriteData(U8 cmd, BIT pollCts, U8 byteCount, U8* pData)
+ 143          {
+ 144   1          if(pollCts)
+ 145   1          {
+ 146   2              while(!ctsWentHigh)
+ 147   2              {
+ 148   3                  radio_comm_PollCTS();
+ 149   3              }
+ 150   2          }
+ 151   1          radio_hal_ClearNsel();
+ 152   1          radio_hal_SpiWriteByte(cmd);
+ 153   1          radio_hal_SpiWriteData(byteCount, pData);
+ 154   1          radio_hal_SetNsel();
+ 155   1          ctsWentHigh = 0;
+ 156   1      }
+ 157          
+ 158          /*!
+ 159           * Waits for CTS to be high
+ 160           *
+ 161           * @return CTS value
+ 162           */
+ 163          U8 radio_comm_PollCTS(void)
+ 164          {
+ 165   1      #ifdef RADIO_USER_CFG_USE_GPIO1_FOR_CTS
+                  while(!radio_hal_Gpio1Level())
+                  {
+                      /* Wait...*/
+                  }
+                  ctsWentHigh = 1;
+                  return 0xFF;
+              #else
+ 173   1          return radio_comm_GetResp(0, 0);
+ 174   1      #endif
+ 175   1      }
+ 176          
+ 177          /**
+ 178           * Clears the CTS state variable.
+C51 COMPILER V9.53.0.0   RADIO_COMM                                                        07/02/2018 16:33:05 PAGE 4   
+
+ 179           */
+ 180          void radio_comm_ClearCTS()
+ 181          {
+ 182   1        ctsWentHigh = 0;
+ 183   1      }
+ 184          
+ 185          #elif (defined SILABS_RADIO_SI4012)
+              
+              /*!
+               * Gets a command response from the radio chip
+               *
+               * @param byteCount     Number of bytes to get from the radio chip
+               * @param pData         Pointer to where to put the data
+               *
+               * @return CTS value
+               */
+              U8 radio_comm_GetResp(U8 byteCount, U8* pData)
+              {
+                SEGMENT_VARIABLE(ctsVal = 0u, U8, SEG_DATA);
+              
+                if (qSmbus_SMBusRead(SI4012_SMBUS_ADDRESS, byteCount, pData) != \
+                                                                        SMBUS_RX_FINISHED) {
+                  return FALSE;
+                }
+              
+                if (pData[0] == 0x80) {
+                  return TRUE;
+                }
+              
+                return FALSE;
+              }
+              
+              /*!
+               * Sends a command to the radio chip
+               *
+               * @param byteCount     Number of bytes in the command to send to the radio device
+               * @param pData         Pointer to the command to send.
+               */
+              U8 radio_comm_SendCmd(U8 byteCount, U8* pData)
+              {
+                if (qSmbus_SMBusWrite(SI4012_SMBUS_ADDRESS, byteCount, pData) != \
+                                                                    SMBUS_TRANSMISSION_OK) {
+                  return FALSE;
+                }
+              
+                return TRUE;
+              }
+              
+              #endif
+ 228          
+ 229          /*!
+ 230           * Sends a command to the radio chip and gets a response
+ 231           *
+ 232           * @param cmdByteCount  Number of bytes in the command to send to the radio device
+ 233           * @param pCmdData      Pointer to the command data
+ 234           * @param respByteCount Number of bytes in the response to fetch
+ 235           * @param pRespData     Pointer to where to put the response data
+ 236           *
+ 237           * @return CTS value
+ 238           */
+ 239          U8 radio_comm_SendCmdGetResp(U8 cmdByteCount, U8* pCmdData, U8 respByteCount, U8* pRespData)
+ 240          {
+C51 COMPILER V9.53.0.0   RADIO_COMM                                                        07/02/2018 16:33:05 PAGE 5   
+
+ 241   1          radio_comm_SendCmd(cmdByteCount, pCmdData);
+ 242   1          return radio_comm_GetResp(respByteCount, pRespData);
+ 243   1      }
+ 244          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    231    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      29
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1       2
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

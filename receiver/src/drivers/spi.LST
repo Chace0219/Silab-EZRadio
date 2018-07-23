@@ -1,0 +1,714 @@
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 1   
+
+
+C51 COMPILER V9.53.0.0, COMPILATION OF MODULE SPI
+OBJECT MODULE PLACED IN spi.OBJ
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\c51.exe spi.c DB OE BR SMALL OPTIMIZE(11,SIZE) DEFINE(SILABS_PLATFORM_WMB912) DE
+                    -FINE(SILABS_WMCU_SI106x)
+
+line level    source
+
+   1          /*! @file spi.c
+   2           * @brief This file contains functions for controlling SPI0 and SPI1 interfaces.
+   3           *
+   4           * @b COPYRIGHT
+   5           * @n Silicon Laboratories Confidential
+   6           * @n Copyright 2012 Silicon Laboratories, Inc.
+   7           * @n http://www.silabs.com
+   8           */
+   9          
+  10          #include "..\bsp.h"
+  11          
+  12          /*------------------------------------------------------------------------*/
+  13          /*                          Global variables                              */
+  14          /*------------------------------------------------------------------------*/
+  15          #if ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG_GLCD))
+  16          /**< Current state of the NSEL of SPI0 */
+  17          SEGMENT_VARIABLE(bSpi_SelectStateSpi0, U8 , SEG_DATA);
+  18          /**< Current state of SPI0 */
+  19          BIT gSpi_Spi0Disabled;
+  20          #endif
+  21          
+  22          /**< Current state of the NSEL of SPI1 */
+  23          SEGMENT_VARIABLE(bSpi_SelectStateSpi1, U8 , SEG_DATA);
+  24          /**< Current state of SPI1 */
+  25          BIT gSpi_Spi1Disabled;
+  26          
+  27          /*------------------------------------------------------------------------*/
+  28          /*                          Function implementations                      */
+  29          /*------------------------------------------------------------------------*/
+  30          
+  31          #if ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG_GLCD))
+  32            /*!
+  33             * This function is used to read/write one byte from/to SPI0.
+  34             *
+  35             * @param[in] biDataIn    Data to be sent.
+  36             * @return  Read value of the SPI port after writing on it.
+  37             */
+  38            #if !(defined SILABS_PLATFORM_WMB912)
+                U8 bSpi_ReadWriteSpi0(U8 biDataIn)
+                {
+                  SEGMENT_VARIABLE(bValue, U8, SEG_DATA);
+                  BIT gRestoreEA;
+              
+                #ifdef SILABS_MCU_F960
+                  SEGMENT_VARIABLE(bRestoreSfrPage, U8, SEG_DATA);
+                #endif
+              
+                  // disable interrupts during SPI transfer
+                  gRestoreEA = EA;
+                  EA = 0;
+              
+                #ifdef SILABS_MCU_F960
+                  // save SFR page and switch to SPI1 page
+                  bRestoreSfrPage = SFRPAGE;
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 2   
+
+                  SFRPAGE = LEGACY_PAGE ;
+                #endif
+              
+                  // Send SPI data using double buffered write
+                  SPIF0 = 0;                                    // clear SPIF
+                  SPI0DAT = ( biDataIn );                       // write data register
+                  while (!TXBMT0);                              // wait on TXBMT
+                  while ((SPI0CFG & M_SPIBSY0) == M_SPIBSY0);   // wait on SPIBSY
+                  bValue = SPI0DAT;                             // read value
+                  SPIF0 = 0;                                    // leave SPIF cleared
+              
+                #ifdef SILABS_MCU_F960
+                  // Restore SFR page after SPI transfer
+                  SFRPAGE = bRestoreSfrPage;
+                #endif
+              
+                  // Restore interrupts after SPI transfer
+                  EA = gRestoreEA;
+              
+                  return bValue;
+                }
+                #endif //#if !(defined SILABS_PLATFORM_WMB912)
+  77          
+  78          #endif //#if ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG_GLCD))
+  79          
+  80          /*!
+  81           * This function is used to read/write one byte from/to SPI1.
+  82           *
+  83           * @param[in] biDataIn    Data to be sent.
+  84           * @return  Read value of the SPI port after writing on it.
+  85           */
+  86          U8 bSpi_ReadWriteSpi1(U8 biDataIn)
+  87          {  
+  88   1        SEGMENT_VARIABLE(bValue, U8, SEG_DATA);
+  89   1        BIT gRestoreEA;
+  90   1      
+  91   1      #ifdef SILABS_MCU_F960
+                SEGMENT_VARIABLE(bRestoreSfrPage, U8, SEG_DATA);
+              #endif
+  94   1      
+  95   1        /* disable interrupts during SPI transfer */
+  96   1        gRestoreEA = EA;
+  97   1        ENTER_CRITICAL_SECTION;
+  98   1      
+  99   1      #ifdef SILABS_MCU_F960
+                // save SFR page and switch to SPI1 page
+                bRestoreSfrPage = SFRPAGE;
+                SFRPAGE = LEGACY_PAGE ;
+              #endif
+ 104   1      
+ 105   1        // Send SPI data using double buffered write
+ 106   1        SPIF1 = 0;                                    // clear SPIF
+ 107   1        SPI1DAT = ( biDataIn );                       // write data register
+ 108   1        while (!TXBMT1);                              // wait on TXBMT
+ 109   1        while ((SPI1CFG & M_SPIBSY1) == M_SPIBSY1);   // wait on SPIBSY
+ 110   1        bValue = SPI1DAT;                             // read value
+ 111   1        SPIF1 = 0;                                    // leave SPIF cleared
+ 112   1      
+ 113   1        // Restore interrupts after SPI transfer
+ 114   1        EA = gRestoreEA;
+ 115   1      
+ 116   1        return bValue;
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 3   
+
+ 117   1      }
+ 118          
+ 119          
+ 120          
+ 121          #if ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG_GLCD))
+ 122          /*!
+ 123           * This function is used to send data over SPI0 no response expected.
+ 124           *
+ 125           *  @param[in] biDataInLength  The length of the data.
+ 126           *  @param[in] *pabiDataIn     Pointer to the first element of the data.
+ 127           *
+ 128           *  @return None
+ 129           */
+ 130          void vSpi_WriteDataSpi0(U8 biDataInLength, U8 *pabiDataIn)
+ 131          {
+ 132   1        while (biDataInLength--) {
+ 133   2          bSpi_ReadWriteSpi0(*pabiDataIn++);
+ 134   2        }
+ 135   1      }
+ 136          #endif
+ 137          
+ 138          /*!
+ 139           * This function is used to send data over SPI1 no response expected.
+ 140           *
+ 141           *  @param[in] biDataInLength  The length of the data.
+ 142           *  @param[in] *pabiDataIn     Pointer to the first element of the data.
+ 143           *
+ 144           *  @return None
+ 145           */
+ 146          void vSpi_WriteDataSpi1(U8 biDataInLength, U8 *pabiDataIn)
+ 147          {
+ 148   1      #ifdef SILABS_MCU_F960
+                #warning Check if implemenations of DMA makes sense for SPI on F960!
+              #endif
+ 151   1      
+ 152   1        while (biDataInLength--) {
+ 153   2          bSpi_ReadWriteSpi1(*pabiDataIn++);
+ 154   2        }
+ 155   1      }
+ 156          
+ 157          #if ( ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG_GLCD)) && !(defined SILABS_PLATFORM_WMB912)
+             - )
+              /*!
+               * This function is used to read data from SPI0.
+               *
+               *  \param[in] biDataOutLength  The length of the data.
+               *  \param[out] *paboDataOut    Pointer to the first element of the response.
+               *
+               *  \return None
+               */
+              void vSpi_ReadDataSpi0(U8 biDataOutLength, U8 *paboDataOut)
+              {
+                while (biDataOutLength--) {
+                  *paboDataOut++ = bSpi_ReadWriteSpi0(0xFF);
+                }
+              }
+              #endif
+ 173          
+ 174          /*!
+ 175           * This function is used to read data from SPI1.
+ 176           *
+ 177           *  \param[in] biDataOutLength  The length of the data.
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 4   
+
+ 178           *  \param[out] *paboDataOut    Pointer to the first element of the response.
+ 179           *
+ 180           *  \return None
+ 181           */
+ 182          void vSpi_ReadDataSpi1(U8 biDataOutLength, U8 *paboDataOut)
+ 183          {
+ 184   1      #ifdef SILABS_MCU_F960
+                #warning Check if implemenations of DMA makes a sense for SPI on F960!
+              #endif
+ 187   1      
+ 188   1        // send command and get response from the radio IC
+ 189   1        while (biDataOutLength--) {
+ 190   2          *paboDataOut++ = bSpi_ReadWriteSpi1(0xFF);
+ 191   2        }
+ 192   1      }
+ 193          
+ 194          
+ 195            /**
+ 196           *  Pull down nSEL of the selected device.
+ 197           *
+ 198           *  @param[in] qiSelect Device select.
+ 199           *
+ 200           *  @note Input: qiSelect <br> 0 - \b DUT <br> 1 - \b LCD <br>
+ 201           *
+ 202           ******************************************************************************/
+ 203          void vSpi_ClearNsel(eSpi_Nsel qiSelect)
+ 204          {
+ 205   1        switch (qiSelect)
+ 206   1        {
+ 207   2            case eSpi_Nsel_RF:
+ 208   2              RF_NSEL = FALSE;
+ 209   2              break;
+ 210   2      
+ 211   2      #if ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG_GLCD))
+ 212   2            case eSpi_Nsel_LCD:
+ 213   2              LCD_NSEL = FALSE;
+ 214   2              break;
+ 215   2      #endif
+ 216   2      
+ 217   2            default:
+ 218   2              break;
+ 219   2        }
+ 220   1      }
+ 221          
+ 222          
+ 223          /**
+ 224           *  Pull-up nSEL of the selected device.
+ 225           *
+ 226           *  @param[in] qiSelect Device select.
+ 227           *
+ 228           *  @note Input: qiSelect <br> 0 - \b DUT <br> 1 - \b LCD <br>
+ 229           *
+ 230           ******************************************************************************/
+ 231          void vSpi_SetNsel(eSpi_Nsel qiSelect)
+ 232          {
+ 233   1        switch (qiSelect)
+ 234   1        {
+ 235   2            case eSpi_Nsel_RF:
+ 236   2              RF_NSEL = TRUE;
+ 237   2              break;
+ 238   2      
+ 239   2      #if ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG_GLCD))
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 5   
+
+ 240   2            case eSpi_Nsel_LCD:
+ 241   2              LCD_NSEL = TRUE;
+ 242   2              break;
+ 243   2      #endif
+ 244   2      
+ 245   2            default:
+ 246   2              break;
+ 247   2        }
+ 248   1      }
+ 249          
+ 250          #ifdef SPI_DRIVER_EXTENDED_SUPPORT
+              /**
+               *  Writes one byte to the SPI1 peripheral and reads one byte at the same time.
+               *
+               *  @param[in] biDataIn Data to be written.
+               *
+               *  @return    Data read from SPI1.
+               *
+               *  @note
+               ******************************************************************************/
+              U8 bSpi_ReadWriteByteSpi1(U8 biDataIn)
+              {
+                SEGMENT_VARIABLE(bReadValue, U8, SEG_DATA);
+              
+                /* disable global interrupts */
+                ENTER_CRITICAL_SECTION;
+              
+                /* select device */
+                vSpi_ClearNsel( eSpi_Nsel_RF );
+                bReadValue = bSpi_ReadWriteSpi1(biDataIn);
+                vSpi_SetNsel( eSpi_Nsel_RF );
+              
+                /* enable global interrupts */
+                EXIT_CRITICAL_SECTION;
+              
+                return bReadValue;
+              }
+              
+              
+              /**
+               *  Read/Write 16 bits to the selected device.
+               *
+               *  @param[in] biAddress Address of the register.
+               *
+               *  @param[in] biDataIn Data to be written.
+               *
+               *  @return    Data read from SPI1.
+               *
+               *  @note
+               ******************************************************************************/
+              U16 bSpi_ReadWriteWordSpi1(U8 biAddress, U8 biDataIn)
+              {
+                SEGMENT_VARIABLE(rwReadValue, UU16, SEG_DATA);
+              
+                /* disable global interrupts */
+                ENTER_CRITICAL_SECTION;
+              
+                /* select device */
+                vSpi_ClearNsel( eSpi_Nsel_RF );
+                rwReadValue.U8[MSB] = bSpi_ReadWriteSpi1(biAddress);
+                rwReadValue.U8[LSB] = bSpi_ReadWriteSpi1(biDataIn);
+                vSpi_SetNsel( eSpi_Nsel_RF );
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 6   
+
+              
+                /* enable global interrupts */
+                EXIT_CRITICAL_SECTION;
+              
+                return rwReadValue.U16;
+              }
+              
+              /**
+               *  Read/Write several number of bytes into the selected device.
+               *
+               *  @param[in]  biAddress Starting address; MSB defines whether it is read or write!
+               *  @param[in]  biLength Number of registers have to be written.
+               *  @param[in]  pbiData Pointer to the source of the registers.
+               *  @param[out] pboData Bytes read during transaction.
+               *
+               *  @note       Read or write bit has to be set!
+               ******************************************************************************/
+              void bSpi_ReadWriteBurstSpi1(U8 biAddress, U8 biLength, U8 *pbiData, U8 *pboData)
+              {
+                SEGMENT_VARIABLE(ii, U8, SEG_DATA);
+              
+                /* disable global interrupts */
+                ENTER_CRITICAL_SECTION;
+              
+                /* select device */
+                vSpi_ClearNsel( eSpi_Nsel_RF );
+                /* send the register address */
+                bSpi_ReadWriteSpi1(biAddress);
+                /* send register content */
+                for (ii = 0u; ii < biLength; ++ii) {
+                  *pboData++ = bSpi_ReadWriteSpi1(*pbiData++);
+                }
+                vSpi_SetNsel( eSpi_Nsel_RF );
+              
+                /* enable global interrupts */
+                EXIT_CRITICAL_SECTION;
+              
+              }
+              
+              #if (!(defined SILABS_PLATFORM_DISABLE_SPI0) && ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG_G
+             -LCD)))
+                /*!
+                 * This function is used to enable SPI0 and associate to XBAR.
+                 *
+                 * @return  None.
+                 */
+                void vSpi_EnableSpi0(void)
+                {
+                #ifdef SILABS_MCU_F960
+                  SEGMENT_VARIABLE(bRestoreSfrPage, U8, SEG_DATA);
+                #endif
+              
+                #ifdef SILABS_MCU_F960
+                  // save SFR page and switch to SPI1 page
+                  bRestoreSfrPage= SFRPAGE;
+                  SFRPAGE = LEGACY_PAGE;
+                #endif
+              
+                  //enable SPI port
+                  SPI0CN |= M_SPI0EN;
+              
+                  //associate to the XBAR
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 7   
+
+                  XBR0 |= M_SPI0E;
+                  //configure IO pins
+              #if (defined SILABS_PLATFORM_RFSTICK)
+                  P0SKIP  &= (~M_P0_SPI0_SCK) & (~M_P0_SPI0_MISO) & (~M_P0_SPI0_MOSI);
+              #else
+                  PXSKIP_SPI0_MOSI &= (~MASK_SPI0_MOSI);
+              #if !(defined SILABS_PLATFORM_WMB912)
+                  PXSKIP_SPI0_MISO &= (~MASK_SPI0_MISO);
+              #endif
+                  PXSKIP_SPI0_SCK  &= (~MASK_SPI0_SCK);
+              #endif
+                  //set default state for pins
+                  SPI0_SCK = 1;
+                  SPI0_MOSI = 1;
+                  gSpi_Spi0Disabled = 0;
+              
+                #ifdef SILABS_MCU_F960
+                  // Restore SFR page after SPI transfer
+                  SFRPAGE = bRestoreSfrPage;
+                #endif
+                }
+                #endif
+              
+                /*!
+                 * This function is used to enable SPI1 and associate to XBAR.
+                 *
+                 * @return  None.
+                 */
+                void vSpi_EnableSpi1(void)
+                {
+                #ifdef SILABS_MCU_F960
+                  SEGMENT_VARIABLE(bRestoreSfrPage, U8, SEG_DATA);
+                #endif
+              
+                #ifdef SILABS_MCU_F960
+                  // save SFR page and switch to SPI1 page
+                  bRestoreSfrPage= SFRPAGE;
+                  SFRPAGE = SPI1_PAGE;
+                #endif
+              
+                  //enable SPI port
+                  SPI1CN |= M_SPI1EN;
+              
+                #ifdef SILABS_MCU_F960
+                  SFRPAGE = LEGACY_PAGE;
+                #endif
+              
+                  //associate to the XBAR
+                  XBR1 |= M_SPI1E;
+                  //configure IO pins
+              #if (defined SILABS_PLATFORM_RFSTICK)
+                  P1SKIP  &= (~M_P1_SPI1_SCK) & (~M_P1_SPI1_MISO) & (~M_P1_SPI1_MOSI);
+              #else
+                  PXSKIP_SPI1_MOSI &= (~MASK_SPI1_MOSI);
+                  PXSKIP_SPI1_MISO &= (~MASK_SPI1_MISO);
+                  PXSKIP_SPI1_SCK  &= (~MASK_SPI1_SCK);
+              #endif
+                  //set default state for pins
+                  SPI1_SCK = 1;
+                  SPI1_MOSI = 1;
+                  gSpi_Spi1Disabled = 0;
+              
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 8   
+
+                #ifdef SILABS_MCU_F960
+                  // Restore SFR page after SPI transfer
+                  SFRPAGE = bRestoreSfrPage;
+                #endif
+                }
+              
+                #if (!(defined SILABS_PLATFORM_DISABLE_SPI0) && ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG
+             -_GLCD)))
+                /*!
+                 * This function is used to disable SPI0 and disconnect from XBAR.
+                 *
+                 * @return  None.
+                 */
+                void vSpi_DisableSpi0(void)
+                {
+                #ifdef SILABS_MCU_F960
+                  SEGMENT_VARIABLE(bRestoreSfrPage, U8, SEG_DATA);
+                #endif
+              
+                #ifdef SILABS_MCU_F960
+                  // save SFR page and switch to SPI1 page
+                  bRestoreSfrPage= SFRPAGE;
+                  SFRPAGE = LEGACY_PAGE;
+                #endif
+              
+                  //disable SPI port
+                  SPI0CN &= (~M_SPI0EN);
+              
+                  //disconnect from XBAR
+                  XBR0 &= (~M_SPI0E);
+                  //configure IO port directions
+              #if (defined SILABS_PLATFORM_RFSTICK)
+                  P0SKIP  |= M_P0_SPI0_SCK | M_P0_SPI0_MISO | M_P0_SPI0_MOSI;
+              #else
+                  PXSKIP_SPI0_MOSI |= (MASK_SPI0_MOSI);
+              #if !(defined SILABS_PLATFORM_WMB912)
+                  PXSKIP_SPI0_MISO |= (MASK_SPI0_MISO);
+              #endif
+                  PXSKIP_SPI0_SCK  |= (MASK_SPI0_SCK);
+              #endif    //set default state for the pins
+                  SPI0_SCK = FALSE;
+                  SPI0_MOSI = TRUE;
+                  gSpi_Spi0Disabled = FALSE;
+              
+                #ifdef SILABS_MCU_F960
+                  // Restore SFR page after SPI transfer
+                  SFRPAGE = bRestoreSfrPage;
+                #endif
+                }
+                #endif
+              
+                /*!
+                 * This function is used to disable SPI1 and disconnect from XBAR.
+                 *
+                 * @return  None.
+                 */
+                void vSpi_DisableSpi1(void)
+                {
+              
+                #ifndef SPI_PERIPHERALS_ALWAYS_ENABLED
+                
+                #ifdef SILABS_MCU_F960
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 9   
+
+                  SEGMENT_VARIABLE(bRestoreSfrPage, U8, SEG_DATA);
+                #endif
+              
+                #ifdef SILABS_MCU_F960
+                  // save SFR page and switch to SPI1 page
+                  bRestoreSfrPage= SFRPAGE;
+                  SFRPAGE = SPI1_PAGE;
+                #endif
+              
+                  //disable SPI port
+                  SPI1CN &= (~M_SPI1EN);
+              
+                #ifdef SILABS_MCU_F960
+                  SFRPAGE = LEGACY_PAGE;
+                #endif
+              
+                  //disconnect from XBAR
+                  XBR1 &= (~M_SPI1E);
+                  
+                  //configure IO port directions
+              #if (defined SILABS_PLATFORM_RFSTICK)
+                  P1SKIP  |= M_P1_SPI1_SCK | M_P1_SPI1_MISO | M_P1_SPI1_MOSI;
+              #else
+                  PXSKIP_SPI1_MOSI |= (MASK_SPI1_MOSI);
+                  PXSKIP_SPI1_MISO |= (MASK_SPI1_MISO);
+                  PXSKIP_SPI1_SCK  |= (MASK_SPI1_SCK);
+              #endif    //set default state for the pins
+                  
+                  //set default state for the pins
+                  SPI1_SCK = FALSE;
+                  SPI1_MOSI = TRUE;
+                  gSpi_Spi1Disabled = TRUE;
+              
+                #ifdef SILABS_MCU_F960
+                  // Restore SFR page after SPI transfer
+                  SFRPAGE = bRestoreSfrPage;
+                #endif
+                
+                #endif
+                }
+                
+              #if (!(defined SILABS_PLATFORM_DISABLE_SPI0) && ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG_G
+             -LCD)))
+                /*!
+                 * This function is used to read one byte from SPI0 using bitbang method.
+                 *
+                 * @return Read byte
+                 */
+                U8 bSpi_ReadByteBitbangSpi0(void)
+                {
+                    SEGMENT_VARIABLE(bReadByte, U8, SEG_DATA);
+                    SEGMENT_VARIABLE(bCnt, U8, SEG_DATA);
+              
+                    bReadByte = FALSE;
+                    SPI0_SCK = TRUE;
+                    NOP();
+                    NOP();
+                    SPI0_SCK = FALSE;
+                    NOP();
+                    for(bCnt = 0; bCnt < 8; bCnt++)
+                    {
+                        SPI0_SCK = TRUE;
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 10  
+
+                        bReadByte <<= 1;
+                        //take sample
+              #if !(defined SILABS_PLATFORM_WMB912)
+                        if(TRUE == SPI0_MISO)
+                        {
+                          bReadByte |= 0x01;
+                        }
+              #endif
+                        SPI0_SCK = FALSE;
+                    }
+              
+                    return bReadByte;
+                }
+                #endif
+              
+                /*!
+                 * This function is used to read one byte from SPI1 using bitbang method.
+                 *
+                 * @return Read byte
+                 */
+                U8 bSpi_ReadByteBitbangSpi1(void)
+                {
+                    SEGMENT_VARIABLE(bReadByte, U8, SEG_DATA);
+                    SEGMENT_VARIABLE(bCnt, U8, SEG_DATA);
+              
+                    bReadByte = FALSE;
+                    SPI1_SCK = TRUE;
+                    NOP();
+                    NOP();
+                    SPI1_SCK = FALSE;
+                    NOP();
+                    for(bCnt = 0; bCnt < 8; bCnt++)
+                    {
+                        SPI1_SCK = TRUE;
+                        bReadByte <<= 1;
+                        //take sample
+                        if(TRUE == SPI1_MISO)
+                        {
+                          bReadByte |= 0x01;
+                        }
+                        SPI1_SCK = FALSE;
+                    }
+              
+                    return bReadByte;
+                }
+              
+                /*!
+                 * This function is used to write specified number of bits to SPI1 using bitbang method.
+                 *
+                 * @param[in] biDataIn Input byte of data bits
+                 * @param[out] biNumOfBits Number of bits to be written to SPI
+                 *
+                 * @return None
+                 */
+                void vSpi_WriteBitsBitbangSpi1(U8 biDataIn, U8 biNumOfBits)
+                {
+                    SEGMENT_VARIABLE(bCnt, U8, SEG_DATA);
+                    SEGMENT_VARIABLE(bMask, U8, SEG_DATA);
+              
+                    bMask = (0x01 << (biNumOfBits-1));
+                    for(bCnt = 0; bCnt < biNumOfBits; bCnt++)
+                    {
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 11  
+
+                        SPI1_SCK = FALSE;
+                        if((biDataIn & bMask) != 0u)
+                        {
+                            SPI1_MOSI = TRUE;
+                        }
+                        else
+                        {
+                            SPI1_MOSI = FALSE;
+                        }
+                        //clock pulse to sample
+                        SPI1_SCK = TRUE;
+                        bMask >>= 1;
+                    }
+                    SPI1_SCK = FALSE;
+                }
+              
+              #endif
+ 626          
+ 627          
+ 628          #if ((defined SPI_DRIVER_EXTENDED_SUPPORT) || (defined SILABS_PLATFORM_WMB912))
+ 629          #if (!(defined SILABS_PLATFORM_DISABLE_SPI0) && ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_LCD_DOG_G
+             -LCD)))
+ 630            /*!
+ 631             * This function is used to write specified number of bits to SPI0 using bitbang method.
+ 632             *
+ 633             * @param[in] biDataIn Input byte of data bits
+ 634             * @param[out] biNumOfBits Number of bits to be written to SPI
+ 635             *
+ 636             * @return None
+ 637             */
+ 638            void vSpi_WriteBitsBitbangSpi0(U8 biDataIn, U8 biNumOfBits)
+ 639            {
+ 640   1            SEGMENT_VARIABLE(bCnt, U8, SEG_DATA);
+ 641   1            SEGMENT_VARIABLE(bMask, U8, SEG_DATA);
+ 642   1      
+ 643   1            bMask = (0x01 << (biNumOfBits-1));
+ 644   1            for(bCnt = 0; bCnt < biNumOfBits; bCnt++)
+ 645   1            {
+ 646   2                SPI0_SCK = FALSE;
+ 647   2                if((biDataIn & bMask) != 0u)
+ 648   2                {
+ 649   3                    SPI0_MOSI = TRUE;
+ 650   3                }
+ 651   2                else
+ 652   2                {
+ 653   3                    SPI0_MOSI = FALSE;
+ 654   3                }
+ 655   2                //clock pulse to sample
+ 656   2                SPI0_SCK = TRUE;
+ 657   2                bMask >>= 1;
+ 658   2            }
+ 659   1            SPI0_SCK = FALSE;
+ 660   1        }
+ 661          #endif //#if (!(defined SILABS_PLATFORM_DISABLE_SPI0) && ((defined SILABS_MCU_DC_MLCD) || (defined SILABS_
+             -LCD_DOG_GLCD)))
+ 662          #endif //#if ((defined SPI_DRIVER_EXTENDED_SUPPORT) || (defined SILABS_PLATFORM_WMB912))
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    198    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+C51 COMPILER V9.53.0.0   SPI                                                               07/02/2018 16:33:05 PAGE 12  
+
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      2      10
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      2       1
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,347 @@
+/*! @file main.c
+ * @brief The main.c file of the Fixed packet length RX demo for Si4455 devices.
+ *
+ * Contains the initialization of the MCU & the radio.
+ * @n The main loop controls the program flow & the radio.
+ *
+ * @b CREATED
+ * @n Silicon Laboratories Ltd.
+ *
+ * @b COPYRIGHT
+ * @n Silicon Laboratories Confidential
+ * @n Copyright 2012 Silicon Laboratories, Inc.
+ * @n http://www.silabs.com
+ *
+ */
+
+#include "..\bsp.h"
+
+
+/*------------------------------------------------------------------------*/
+/*                          Global variables                              */
+/*------------------------------------------------------------------------*/
+
+/*------------------------------------------------------------------------*/
+/*                          Local variables                               */
+/*------------------------------------------------------------------------*/
+
+/*------------------------------------------------------------------------*/
+/*                      Local function prototypes                         */
+/*------------------------------------------------------------------------*/
+void vPlf_McuInit        (void);
+void vInitializeHW       (void);
+void DemoApp_Pollhandler (void);
+
+/*------------------------------------------------------------------------*/
+/*                          Function implementations                      */
+/*------------------------------------------------------------------------*/
+
+/** \fn void main(void)
+ * \brief The main function of the demo.
+ *
+ * \todo Create description
+ */
+void main(void)
+{
+  // Initialize the Hardware and Radio
+  vInitializeHW();
+
+#ifdef SILABS_LCD_DOG_GLCD
+  /* Initialize graphic LCD */
+  vLcd_InitLcd();
+
+  /* Set logo location to center */
+  bLcd_LcdSetPictureCursor(bLcd_Line1_c, 35u);
+
+  /* Draw SiLabs logo */
+  vLcd_LcdDrawPicture(silabs66x30);
+#endif
+
+  // Start RX
+  vRadio_StartRX(pRadioConfiguration->Radio_ChannelNumber);
+	vHmi_ChangeLedState(eHmi_Led1_c, eHmi_LedOff_c);
+	vHmi_ChangeLedState(eHmi_Led2_c, eHmi_LedOff_c);
+	vHmi_ChangeLedState(eHmi_Led3_c, eHmi_LedOff_c);
+  while (TRUE)
+  {
+    // The following Handlers requires care on invoking time interval
+    if (wIsr_Timer2Tick)
+    {
+      vHmi_LedHandler();
+      vHmi_BuzzHandler();
+      vHmi_PbHandler();
+
+      wIsr_Timer2Tick = 0;
+    }
+
+    // Demo Application Poll-Handler function
+    DemoApp_Pollhandler();
+  }
+}
+
+/**
+ *  Demo Application Poll-Handler
+ *
+ *  @note This function must be called periodically.
+ *
+ */
+void DemoApp_Pollhandler()
+{
+  U8 lButton = 0xFF;
+
+  // Check if radio packet received
+  if (TRUE == gRadio_CheckReceived())
+  {
+    // Check if the radio packet contains "BUTTON" string
+    if (gSampleCode_StringCompare((U8 *) &fixRadioPacket[0u], "BUTTON", 6u) == TRUE)
+    {
+      // Search for button index number (from '1' to '4')
+      lButton = fixRadioPacket[6u] - 0x30;
+
+      vHmi_ChangeBuzzState(eHmi_BuzzOnce_c);
+    }
+    else if (fixRadioPacket[0u] == fixRadioPacket[2u])
+    {
+      /* Packet sent by old Keyfob */
+
+      switch (fixRadioPacket[0u])
+      {
+        case 0xD7:
+          lButton = 0x01;
+          break;
+
+        case 0xF5:
+          lButton = 0x02;
+          break;
+
+        case 0x5F:
+          lButton = 0x03;
+          break;
+
+        case 0x7D:
+          lButton = 0x04;
+          break;
+
+        default:
+          break;
+      }
+    }
+    else
+    {
+      /* Packet sent by new Keyfob */
+
+      if (fixRadioPacket[4u] & (1u << 0u))
+      {
+        lButton = 0x01;
+      }
+      else if (fixRadioPacket[4u] & (1u << 1u))
+      {
+        lButton = 0x02;
+      }
+      else if (fixRadioPacket[4u] & (1u << 2u))
+      {
+        lButton = 0x03;
+      }
+      else if (fixRadioPacket[4u] & (1u << 3u))
+      {
+        lButton = 0x04;
+      }
+    }
+
+    switch (lButton)
+    {
+	/*
+    case 0x01:
+      vHmi_ChangeLedState(eHmi_Led1_c, eHmi_LedBlinkOnce_c);
+      break;
+
+    case 0x02:
+      vHmi_ChangeLedState(eHmi_Led2_c, eHmi_LedBlinkOnce_c);
+      break;
+
+    case 0x03:
+      vHmi_ChangeLedState(eHmi_Led3_c, eHmi_LedBlinkOnce_c);
+      break;
+
+    case 0x04:
+      vHmi_ChangeLedState(eHmi_Led1_c, eHmi_LedBlinkOnce_c);
+      break;
+	  */
+	
+
+    case 0x05:
+      vHmi_ChangeLedState(eHmi_Led3_c, eHmi_LedToggle_c);
+      break;
+	
+	default:
+		break;
+    }
+  }
+}
+
+/**
+ *  Calls the init functions for the used peripherals/modules
+ *
+ *  @note Should be called at the beginning of the main().
+ *
+ */
+void vInitializeHW()
+{
+  // Initialize the MCU peripherals
+  vPlf_McuInit();
+
+  // Initialize IO ports
+  vCio_InitIO();
+
+  // Start Timer2 peripheral with overflow interrupt
+  vTmr_StartTmr2(eTmr_SysClkDiv12_c, wwTmr_Tmr2Periode.U16, TRUE, bTmr_TxXCLK_00_c);
+
+  // Start the push button handler
+  vHmi_InitPbHandler();
+
+  // Start the Led handler
+  vHmi_InitLedHandler();
+
+  // Start the Buzzer Handler
+  vHmi_InitBuzzer();
+
+  // Initialize the Radio
+  vRadio_Init();
+
+  // Enable configured interrupts
+  mIsr_EnableAllIt();
+}
+
+/** \fn void MCU_Init(void)
+ *  \brief Initializes ports of the MCU.
+ *
+ *  \return None
+ *
+ *  \note It has to be called from the Initialization section.
+ *  \todo Create description
+ */
+void vPlf_McuInit(void)
+{
+  U16 wDelay = 0xFFFF;
+
+  /* disable F930 watchdog */
+  PCA0MD &= (~M_WDTE);
+
+  /* Init Internal Precision Oscillator (24.5MHz) */
+  SFRPAGE = LEGACY_PAGE;
+  FLSCL   = M_BYPASS;
+
+  OSCICN |= M_IOSCEN; // p7: Internal Prec. Osc. enabled
+  CLKSEL  = 0x00;     // Int. Prec. Osc. selected (24.5MHz)
+
+  /* Port IN/OUT init */
+  /* P0: 2,3,4,6,7 push-pull */
+  /* P1: 0,2,3,6 push-pull */
+  // P0MDOUT   = 0xDC;
+  // P1MDOUT   = 0x4D;
+
+  /* P0: 4,7 push-pull */
+  /* P1: 0,2,3,4,5,6 push-pull */
+  P0MDOUT   = 0x90;
+  P1MDOUT   = 0x7D;
+
+  /* P0: 0,1,2,3,6,7 skipped */
+  /* P1: 3,6 skipped */
+  // P0SKIP    = 0xCF;
+  // P1SKIP    = 0x48;
+  
+  /* P0: 0,1,2,3,4,7 skipped */
+  /* P1: 3,4,5,6 skipped */
+  P0SKIP    = 0x9F;
+  P1SKIP    = 0x78;
+
+  /* Set SMBUS clock speed */
+  Set115200bps_24MHZ5;
+  /* Start Timer1 */
+  TR1 = 1;
+  /* Initialize SMBus */
+  vSmbus_InitSMBusInterface();
+
+  P0MDIN  = 0xFF; // All pin configured as digital port
+  P1MDIN  = 0xFF; // All pin configured as digital port
+
+  /* Set Drive Strenght */
+  SFRPAGE = CONFIG_PAGE;
+  P0DRV   = 0x00;
+  P1DRV   = 0x00;
+
+  SFRPAGE = LEGACY_PAGE;
+
+  /* Crossbar configuration */
+  XBR0    = M_URT0E | M_SMB0E; //p0: UART enabled on XBAR
+  XBR1    = M_SPI1E ; //p6: SPI1 enabled on XBAR
+  /*
+#if ((defined SILABS_PLATFORM_RFSTICK) || (defined SILABS_PLATFORM_LCDBB))
+  XBR1    |= (1 << BF_PCA0ME_0); //p0: PCA CEX0 enabled on XBAR
+#elif(defined SILABS_MCU_DC_EMIF_F930)
+  XBR0    |= M_SPI0E ; //p6: SPI1 enabled on XBAR
+#elif (defined SILABS_MCU_DC_EMIF_F930_STANDALONE)
+
+#elif (defined SILABS_PLATFORM_WMB930)
+  XBR1    |= (1 << BF_PCA0ME_0); //p0: PCA CEX0 enabled on XBAR
+  XBR0    |= M_SPI0E;
+#elif (defined SILABS_PLATFORM_WMB912)
+
+#else
+#error TO BE WRITTEN FOR OTHER PLARFORMS!
+#endif
+*/
+  XBR2    = M_XBARE; //p6: XBAR enable
+
+  /* latch all inputs to '1' */
+  P0      = ~P0MDOUT;
+  P1      = ~P1MDOUT;
+
+  /* set all output to its default state */
+  LED1      = EXTINGUISH;
+#if !(defined SILABS_PLATFORM_WMB912)
+  LED2      = EXTINGUISH;
+  LED3      = EXTINGUISH;
+  LED4      = EXTINGUISH;
+#endif
+  RF_NSEL   = TRUE;
+  RF_PWRDN  = FALSE;
+
+  SPI1CFG   = 0x40;
+  SPI1CN    = 0x01;
+  SPI1CKR   = 0x0B;
+
+
+  /* De-select radio SPI */
+  vSpi_SetNsel(eSpi_Nsel_RF);
+
+#if ((defined SILABS_LCD_DOG_GLCD) || (defined SILABS_MCU_DC_EMIF_F930) || (defined SILABS_PLATFORM_WMB))
+  /* De-select LCD SPI */
+  vSpi_SetNsel(eSpi_Nsel_LCD);
+
+  LCD_A0    = FALSE;
+#endif
+
+  /* Startup delay */
+  for (; wDelay; wDelay--)  ;
+
+}
+
+#ifdef SDCC
+/**
+ * \brief External startup function of SDCC.
+ *
+ * It performs operations
+ * prior static and global variable initialization.
+ * Watchdog timer should be disabled this way, otherwise it
+ * can expire before variable initialization is carried out,
+ * and may prevent program execution jumping into main().
+ *
+ * \param None
+ * \return None
+ */
+void _sdcc_external_startup(void)
+{
+  PCA0MD &= ~0x40;      // Disable Watchdog timer
+}
+#endif
